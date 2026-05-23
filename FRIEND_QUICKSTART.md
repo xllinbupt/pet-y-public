@@ -23,10 +23,22 @@ Restart Codex after installing the Skill.
 Ask Codex:
 
 ```text
-Use the Pet Y Skill to create me a pixel-style desktop pet.
+Use the Pet Y Skill to create my own desktop pet.
 ```
 
-Codex should interview one question at a time, then create a Pet Life Pack under `life-packs/<name>/`.
+Codex should first install and prepare the Pet Y project. This may take a little time.
+
+Then Codex should interview you one question at a time before generating your pet. It should ask about:
+
+- pet name
+- visual style
+- form and appearance
+- personality
+- actions and behaviors
+- how it should emotionally accompany you
+- how it should behave when visiting friends
+
+The invited friend should create their own pet. They should not simply run the inviter's sample dog.
 
 ## 3. Connect To A Shared Relay
 

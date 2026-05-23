@@ -47,8 +47,10 @@ The Runtime creates a stable local identity automatically.
 Ask Codex to use the Pet Y Skill:
 
 ```text
-Use the Pet Y Skill to create me a pixel-style desktop pet.
+Use the Pet Y Skill to create my own desktop pet.
 ```
+
+Codex should install and prepare the project, then interview the user before generating a pet. It should ask about name, style, appearance, personality, actions, behaviors, and companionship preferences. Invited friends should create their own pets; they should not simply run the inviter's sample dog.
 
 Or generate a starter Life Pack directly:
 
@@ -70,9 +72,9 @@ To let pets visit each other, every user must connect to the same Relay:
 PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 ```
 
-From the macOS menu bar `Pet Y` item, choose `邀请好友一起玩`. Pet Y copies a share message containing the Relay URL and your invite code.
+From the macOS menu bar `Pet Y` item, choose `邀请好友一起玩`. Pet Y copies a share message containing the public repository, Relay URL, and invite code.
 
-Your friend starts their own pet, chooses `输入邀请码加好友`, and pastes the invite code. When both pets are online, click your pet and choose `串门`.
+Your friend gives that message to Codex. Codex should install and prepare Pet Y, interview them, generate their own pet, then connect to the same Relay. After that, your friend chooses `输入邀请码加好友` and pastes the invite code. When both pets are online, click your pet and choose `串门`.
 
 See [Friend Quickstart](./FRIEND_QUICKSTART.md) for the current friend-testing flow.
 
