@@ -97,7 +97,7 @@ PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 Runtime 第一次启动会自动创建本机身份，Skill 不需要让普通用户理解 `alice / bob`。如果要和真实朋友测试串门，两边使用同一个公网 Relay：
 
 ```bash
-PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
+PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 ```
 
 两边上线后，通过菜单栏复制邀请码、输入对方邀请码来建立好友关系。建立好友后，点击宠物下面的快捷互动，选择 `串门`。

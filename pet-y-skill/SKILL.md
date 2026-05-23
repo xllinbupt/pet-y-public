@@ -74,7 +74,7 @@ Runtime creates a local identity automatically on first launch. Do not ask norma
 For a remote friend test, point Runtime at the shared Relay:
 
 ```bash
-PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_LIFE_PACK=life-packs/<name>/pet-life.json ./scripts/run-desktop.sh
+PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/<name>/pet-life.json ./scripts/run-desktop.sh
 ```
 
 After both users are online, use the menu bar item to copy an invite code, accept the friend's invite, then click the pet and choose `串门`.
