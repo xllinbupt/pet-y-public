@@ -75,7 +75,7 @@ function readBody(req) {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 1_000_000) {
+      if (body.length > 5_000_000) {
         reject(new Error("Request body too large"));
         req.destroy();
       }
@@ -421,6 +421,8 @@ async function handleApi(req, res, url) {
     emitTo(host_user_id, "visit_started", {
       visit,
       profile: safePetProfile(profile),
+      animation_states: profile.animation_states || null,
+      asset_blobs: profile.asset_blobs || {},
       host_rules: host.host_rules
     });
     emitTo(owner_user_id, "visit_status", visit);
