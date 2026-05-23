@@ -87,6 +87,8 @@ struct VisitSession: Codable {
 struct VisitStartedPayload: Codable {
     let visit: VisitSession
     let profile: PetProfile
+    let animation_states: [String: AnimationState]?
+    let asset_blobs: [String: String]?
 }
 
 struct MemoryReceipt: Codable {
@@ -129,6 +131,20 @@ struct PetLifePack: Codable {
     let schema_version: String
     let profile: PetProfile
     let animation_states: [String: AnimationState]?
+}
+
+struct PetProfileRegistration: Codable {
+    let pet_id: String
+    let owner_user_id: String
+    let profile_version: Int
+    let protocol_version: String
+    let name: String
+    let style: String
+    let preview: String
+    let personality_card: String
+    let projection_capabilities: [String]
+    let animation_states: [String: AnimationState]?
+    let asset_blobs: [String: String]?
 }
 
 enum AnimationIntent {
@@ -1170,7 +1186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func registerProfile() {
-        relay.post("api/profiles", body: localPet) { [weak self] (result: Result<ProfileResponse, Error>) in
+        relay.post("api/profiles", body: profileRegistration()) { [weak self] (result: Result<ProfileResponse, Error>) in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let response):
@@ -1180,6 +1196,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private func profileRegistration() -> PetProfileRegistration {
+        PetProfileRegistration(
+            pet_id: localPet.pet_id,
+            owner_user_id: localPet.owner_user_id,
+            profile_version: localPet.profile_version,
+            protocol_version: localPet.protocol_version,
+            name: localPet.name,
+            style: localPet.style,
+            preview: localPet.preview,
+            personality_card: localPet.personality_card,
+            projection_capabilities: localPet.projection_capabilities,
+            animation_states: lifePack.pack.animation_states,
+            asset_blobs: projectionAssetBlobs()
+        )
+    }
+
+    private func projectionAssetBlobs() -> [String: String] {
+        guard let states = lifePack.pack.animation_states else { return [:] }
+        var blobs: [String: String] = [:]
+        for state in states.values {
+            guard state.format == "sprite_sheet_png", blobs[state.asset] == nil else { continue }
+            let assetURL = lifePack.directoryURL.appendingPathComponent(state.asset)
+            guard let data = try? Data(contentsOf: assetURL) else { continue }
+            blobs[state.asset] = data.base64EncodedString()
+        }
+        return blobs
     }
 
     private func createInvite() {
@@ -1401,6 +1445,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let view = PetView(
             profile: payload.profile,
             isVisitor: true,
+            animationStates: payload.animation_states,
+            assetBaseURL: materializeVisitorAssets(payload),
             onClick: { [weak self] in
                 self?.showVisitorInteractionMenu()
             },
@@ -1424,6 +1470,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         visitorWindow = PetWindow(view: view, origin: CGPoint(x: screen.maxX - 320, y: screen.minY + 300))
         view.say("我是 \(payload.profile.name)，右键可以投喂我。")
         remember("\(payload.profile.name) 来你的桌面串门了。")
+    }
+
+    private func materializeVisitorAssets(_ payload: VisitStartedPayload) -> URL? {
+        guard let assetBlobs = payload.asset_blobs, !assetBlobs.isEmpty else { return nil }
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("PetY")
+            .appendingPathComponent("visitor-assets")
+            .appendingPathComponent(payload.profile.pet_id)
+        try? FileManager.default.removeItem(at: base)
+
+        for (assetPath, encoded) in assetBlobs {
+            guard let data = Data(base64Encoded: encoded) else { continue }
+            let fileURL = base.appendingPathComponent(assetPath)
+            try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: fileURL, options: [.atomic])
+        }
+        return base
     }
 
     private func recordVisitEvent(type: String, data: [String: String]) {
