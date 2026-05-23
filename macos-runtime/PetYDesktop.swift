@@ -1286,20 +1286,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func sendVisit(to friend: String) {
-        guard !friend.isEmpty else {
+    private func sendVisit(to friendUserId: String, displayName: String? = nil) {
+        guard !friendUserId.isEmpty else {
             sayLocal("我还不知道要去谁那里。")
             log("串门失败：没有选择好友。")
             return
         }
+        let friendName = displayName ?? friends.first(where: { $0.user_id == friendUserId })?.display_name ?? friendUserId
         closeInteractionMenu()
-        sayLocal("我准备去 \(friend) 那儿。")
+        sayLocal("我准备去 \(friendName) 那儿。")
         panel.setStatus("\(localPet.name) 准备出门")
-        log("正在发起串门：\(friend)")
+        log("正在发起串门：\(friendName)")
         let body = VisitRequest(
             pet_id: localPet.pet_id,
             owner_user_id: userId,
-            host_user_id: friend,
+            host_user_id: friendUserId,
             departure_context: ["mood": "curious", "intent": "play"]
         )
         relay.post("api/visits", body: body) { [weak self] (result: Result<VisitResponse, Error>) in
@@ -1308,7 +1309,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .success(let response):
                     self?.panel.setStatus("\(self?.localPet.name ?? "宠物") 已出门")
                     self?.sayLocal("我出门啦。")
-                    self?.showAwaySign(to: friend)
+                    self?.showAwaySign(to: friendName)
                     self?.log("创建串门会话：\(response.visit.visit_id)")
                 case .failure(let error):
                     let message = self?.visitFailureMessage(error) ?? "串门失败了。"
@@ -1531,7 +1532,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if friends.count == 1, let friend = friends.first {
             if friend.online {
                 sayLocal("我去问问 \(friend.display_name) 在不在家。")
-                sendVisit(to: friend.user_id)
+                sendVisit(to: friend.user_id, displayName: friend.display_name)
             } else {
                 sayLocal("\(friend.display_name) 现在不在家。")
                 log("\(friend.display_name) 当前离线，不能串门。")
@@ -1543,7 +1544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             PetAction(title: "\(friend.display_name)\(friend.online ? "" : " 不在家")") { [weak self] in
                 self?.closeInteractionMenu()
                 if friend.online {
-                    self?.sendVisit(to: friend.user_id)
+                    self?.sendVisit(to: friend.user_id, displayName: friend.display_name)
                 } else {
                     self?.sayLocal("\(friend.display_name) 现在不在家。")
                     self?.log("\(friend.display_name) 当前离线，不能串门。")
