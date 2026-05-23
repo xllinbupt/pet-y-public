@@ -1212,7 +1212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                     self.panel.setStatus("邀请文案已复制")
-                    self.sayLocal("邀请已经复制好啦。")
+                    self.sayLocal("邀请已经复制好了，发给朋友吧。")
                     self.log("已复制好友邀请。")
                 case .failure(let error):
                     self?.sayLocal("邀请生成失败了。")
@@ -1225,16 +1225,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func friendInviteText(token: String) -> String {
         let relayURL = relay.baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return """
-        我在玩 Pet Y，一只可以在朋友桌面之间串门的桌面宠物。
+        我在玩 Pet Y，一个可以让桌面宠物去朋友电脑上串门的小实验。
 
-        我的宠物叫 \(localPet.name)，它想去你的桌面玩。
+        我的宠物叫 \(localPet.name)，它想认识你未来创建的宠物。
 
         公开说明在这里：
         https://github.com/xllinbupt/pet-y-public
 
-        你可以把下面这段话交给 Codex：
+        你可以把下面这段话发给 Codex：
 
-        请根据 https://github.com/xllinbupt/pet-y-public 的说明，帮我创建或启动一只 Pet Y 桌面宠物，并连接这个 Relay：
+        请根据 https://github.com/xllinbupt/pet-y-public 的说明，先安装和准备 Pet Y 项目。这个过程可能需要一点时间。
+
+        然后请访谈我，帮我创建一只属于我自己的桌面宠物。请问我宠物的名字、风格、外形、性格、动作、行为和它喜欢怎样陪伴我，不要直接运行邀请人的小狗。
+
+        创建完成后，请启动我的宠物，并连接这个 Relay：
         \(relayURL)
 
         启动后，在 Pet Y 菜单里选择“输入邀请码加好友”，粘贴这个邀请码：

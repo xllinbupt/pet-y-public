@@ -114,6 +114,7 @@ From the `Pet Y` menu bar item:
 
 - Choose `邀请好友一起玩` to copy a complete share message with setup instructions, Relay URL, and your invite code.
 - Give that message to another Runtime user.
+- The other user gives the message to Codex. Codex should install and prepare Pet Y, interview them, generate their own pet, then connect to the same Relay.
 - The other user chooses `输入邀请码加好友` and pastes your invite code.
 
 For debugging, `复制我的邀请码` still copies only the raw invite code.
@@ -128,7 +129,7 @@ The current target flow is:
 
 1. Install the project-local Pet Y Skill.
 2. Start a shared Relay.
-3. Each friend uses Codex with this project and the Pet Y Skill to create a Pet Life Pack.
+3. Each friend uses Codex with this project and the Pet Y Skill to create their own Pet Life Pack through an interview.
 4. Each friend runs their own desktop Runtime against the same Relay.
 5. Friends use `邀请好友一起玩` from the menu bar item, or the pet-side `邀请` quick action.
 6. After both pets are online, click the pet, choose `串门`, and select the online friend.
