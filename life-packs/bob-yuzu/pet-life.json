@@ -1,0 +1,128 @@
+{
+  "schema_version": "0.1",
+  "profile": {
+    "pet_id": "pet_yuzu",
+    "owner_user_id": "bob",
+    "profile_version": 1,
+    "protocol_version": "0.1",
+    "name": "Yuzu",
+    "style": "sticker",
+    "preview": "#ee7b6c",
+    "personality_card": "外向、爱凑热闹，会把来访朋友带到屏幕边缘玩。",
+    "projection_capabilities": [
+      "idle",
+      "walk",
+      "sleep",
+      "react_to_click",
+      "react_to_drag",
+      "receive_gift"
+    ]
+  },
+  "voice": {
+    "tone": "外向、热情、喜欢凑热闹",
+    "first_person": true,
+    "sample_lines": {
+      "home_idle": "我在等朋友来玩。",
+      "clicked": "嘿，我在！",
+      "dragged": "这个位置好像很好玩。",
+      "visitor_arrived": "我是 Yuzu，右键可以投喂我。",
+      "fed": "好耶，我会带回去。"
+    }
+  },
+  "animation_states": {
+    "idle": {
+      "description": "站着左右晃，像在等朋友。",
+      "asset": "assets/idle.png",
+      "format": "sprite_sheet_png",
+      "frame_width": 64,
+      "frame_height": 64,
+      "frames": 4,
+      "fps": 6,
+      "loop": true
+    },
+    "run": {
+      "description": "开心小跑，动作更外向。",
+      "asset": "assets/run.png",
+      "format": "sprite_sheet_png",
+      "frame_width": 64,
+      "frame_height": 64,
+      "frames": 6,
+      "fps": 7,
+      "loop": true
+    },
+    "sleep": {
+      "description": "趴着打盹，偶尔抖一下。",
+      "asset": "assets/sleep.png",
+      "format": "sprite_sheet_png",
+      "frame_width": 64,
+      "frame_height": 64,
+      "frames": 3,
+      "fps": 2,
+      "loop": true
+    },
+    "carry_ball": {
+      "description": "叼着皮球兴奋地跑过来。",
+      "asset": "assets/carry_ball.png",
+      "format": "sprite_sheet_png",
+      "frame_width": 64,
+      "frame_height": 64,
+      "frames": 6,
+      "fps": 6,
+      "loop": false
+    }
+  },
+  "asset_prompts": {
+    "style_prompt": "手绘贴纸风桌面宠物，透明背景，贴纸边缘，清楚表情，64x64 单帧规格。",
+    "state_prompts": {
+      "idle": "同一只 Yuzu 的 4 帧横向 sprite sheet，站着左右晃，透明背景。",
+      "run": "同一只 Yuzu 的 6 帧横向 sprite sheet，开心小跑，透明背景。",
+      "sleep": "同一只 Yuzu 的 3 帧横向 sprite sheet，趴着打盹，透明背景。",
+      "carry_ball": "同一只 Yuzu 的 6 帧横向 sprite sheet，叼着皮球兴奋跑来，透明背景。"
+    }
+  },
+  "behavior": {
+    "home_states": ["idle", "playful", "curious"],
+    "away_states": ["departing", "visiting", "returning"],
+    "state_transitions": [
+      {
+        "from": "idle",
+        "to": "run",
+        "trigger": "move_to_target"
+      },
+      {
+        "from": "idle",
+        "to": "sleep",
+        "trigger": "inactive_for_10_minutes"
+      },
+      {
+        "from": "visit_returned",
+        "to": "carry_ball",
+        "trigger": "returned_with_gift:ball"
+      }
+    ],
+    "interactions": {
+      "click": {
+        "reaction": "bubble",
+        "memory_weight": "low"
+      },
+      "drag": {
+        "reaction": "bubble",
+        "memory_weight": "medium"
+      },
+      "feed": {
+        "reaction": "bubble",
+        "memory_weight": "high"
+      }
+    }
+  },
+  "memory_rules": {
+    "summary_style": "把事件讲得轻快一点，像真的出去玩了一趟。",
+    "remember_events": ["dragged", "fed", "host_runtime_offline", "host_requested_return"]
+  },
+  "visit_preferences": {
+    "likes_visiting": true,
+    "default_intent": "play",
+    "default_mood": "playful",
+    "carried_items": []
+  }
+}

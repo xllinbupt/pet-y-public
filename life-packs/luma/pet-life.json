@@ -1,0 +1,186 @@
+{
+  "schema_version": "0.1",
+  "profile": {
+    "pet_id": "pet_luma",
+    "owner_user_id": "alice",
+    "profile_version": 1,
+    "protocol_version": "0.1",
+    "name": "Luma",
+    "style": "pixel",
+    "preview": "#d9a45f",
+    "personality_card": "安静、贴心，会在你分心时轻轻闪一下",
+    "projection_capabilities": [
+      "idle",
+      "move",
+      "rest",
+      "sleep",
+      "signature_glow",
+      "react_to_click",
+      "react_to_drag",
+      "receive_gift"
+    ]
+  },
+  "voice": {
+    "tone": "温柔、简短、像一个会回应你的小生命",
+    "first_person": true,
+    "sample_lines": {
+      "home_idle": "我在这里。",
+      "clicked": "我在！",
+      "dragged": "这个地方也可以。",
+      "visitor_arrived": "我是Luma，我来串门啦。",
+      "fed": "我会把这个好吃的带回去。",
+      "signature": "我想给你看我的小动作。"
+    }
+  },
+  "animation_states": {
+    "idle": {
+      "description": "待机，有轻微呼吸感或小幅摆动。",
+      "asset": "assets/idle.png",
+      "format": "sprite_sheet_png",
+      "frame_width": 64,
+      "frame_height": 64,
+      "frames": 4,
+      "fps": 6,
+      "loop": true
+    },
+    "move": {
+      "description": "移动到目标位置，保持角色身份一致。",
+      "asset": "assets/move.png",
+      "format": "sprite_sheet_png",
+      "frame_width": 64,
+      "frame_height": 64,
+      "frames": 6,
+      "fps": 7,
+      "loop": true
+    },
+    "rest": {
+      "description": "安静停留或坐下，看向用户。",
+      "asset": "assets/rest.png",
+      "format": "sprite_sheet_png",
+      "frame_width": 64,
+      "frame_height": 64,
+      "frames": 3,
+      "fps": 4,
+      "loop": true
+    },
+    "sleep": {
+      "description": "进入休息或睡觉状态，有轻微呼吸感。",
+      "asset": "assets/sleep.png",
+      "format": "sprite_sheet_png",
+      "frame_width": 64,
+      "frame_height": 64,
+      "frames": 3,
+      "fps": 2,
+      "loop": true
+    },
+    "signature_glow": {
+      "description": "招牌互动动作。",
+      "asset": "assets/signature_glow.png",
+      "format": "sprite_sheet_png",
+      "frame_width": 64,
+      "frame_height": 64,
+      "frames": 6,
+      "fps": 6,
+      "loop": false
+    }
+  },
+  "asset_prompts": {
+    "style_prompt": "像素风会发光的小星星桌面宠物，64x64 单帧规格，透明背景，清晰轮廓，有限色板，动作帧一致。",
+    "state_prompts": {
+      "idle": "同一只像素风会发光的小星星的 4 帧横向 sprite sheet，待机状态，轻微呼吸感或小幅摆动，透明背景。",
+      "move": "同一只像素风会发光的小星星的 6 帧横向 sprite sheet，移动动作，角色身份保持一致，透明背景。",
+      "rest": "同一只像素风会发光的小星星的 3 帧横向 sprite sheet，安静停留或坐下，看向用户，透明背景。",
+      "sleep": "同一只像素风会发光的小星星的 3 帧横向 sprite sheet，休息或睡觉状态，轻微呼吸感，透明背景。",
+      "signature_glow": "同一只像素风会发光的小星星的 6 帧横向 sprite sheet，身体轻轻发光或闪烁，透明背景。"
+    }
+  },
+  "behavior": {
+    "home_states": [
+      "idle",
+      "rest",
+      "sleep"
+    ],
+    "away_states": [
+      "departing",
+      "visiting",
+      "returning"
+    ],
+    "state_transitions": [
+      {
+        "from": "idle",
+        "to": "move",
+        "trigger": "move_to_target"
+      },
+      {
+        "from": "idle",
+        "to": "rest",
+        "trigger": "user_nearby"
+      },
+      {
+        "from": "idle",
+        "to": "sleep",
+        "trigger": "inactive_for_10_minutes"
+      },
+      {
+        "from": "idle",
+        "to": "signature_glow",
+        "trigger": "interaction_menu:signature"
+      }
+    ],
+    "interactions": {
+      "click": {
+        "reaction": "bubble",
+        "memory_weight": "low"
+      },
+      "drag": {
+        "reaction": "bubble",
+        "memory_weight": "medium"
+      },
+      "feed": {
+        "reaction": "bubble",
+        "memory_weight": "high"
+      },
+      "pet": {
+        "trigger": "interaction_menu:pet",
+        "sequence": [
+          "rest",
+          "bubble_response"
+        ],
+        "reaction": "affection_animation",
+        "memory_weight": "medium"
+      },
+      "sleep_now": {
+        "trigger": "interaction_menu:sleep",
+        "sequence": [
+          "sleep"
+        ],
+        "reaction": "state_change",
+        "memory_weight": "low"
+      },
+      "signature": {
+        "trigger": "interaction_menu:signature",
+        "sequence": [
+          "signature_glow",
+          "bubble_response"
+        ],
+        "reaction": "signature_animation",
+        "memory_weight": "medium"
+      }
+    }
+  },
+  "memory_rules": {
+    "summary_style": "用宠物自己的口吻，把互动整理成一小段生活经历，不要像系统日志。",
+    "remember_events": [
+      "dragged",
+      "fed",
+      "host_runtime_offline",
+      "host_requested_return"
+    ]
+  },
+  "visit_preferences": {
+    "likes_visiting": true,
+    "default_intent": "play",
+    "default_mood": "curious",
+    "carried_items": []
+  }
+}

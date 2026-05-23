@@ -1,0 +1,14 @@
+{
+  "name": "pet-y-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "First MVP prototype for agent-generated social desktop pets.",
+  "type": "module",
+  "scripts": {
+    "build:desktop": "swiftc -module-cache-path .build/module-cache macos-runtime/PetYDesktop.swift -o .build/PetYDesktop -framework AppKit",
+    "check": "node --check server.js && node --check public/runtime.js && node --check scripts/create-pet-life-pack.js",
+    "create:pet": "node scripts/create-pet-life-pack.js",
+    "start": "node server.js",
+    "start:public": "./scripts/start-relay-public.sh"
+  }
+}

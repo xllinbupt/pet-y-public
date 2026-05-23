@@ -1,0 +1,47 @@
+{
+  "idle": {
+    "asset": "assets/idle.png",
+    "format": "sprite_sheet_png",
+    "frame_width": 64,
+    "frame_height": 64,
+    "frames": 4,
+    "fps": 6,
+    "loop": true
+  },
+  "run": {
+    "asset": "assets/run.png",
+    "format": "sprite_sheet_png",
+    "frame_width": 64,
+    "frame_height": 64,
+    "frames": 6,
+    "fps": 10,
+    "loop": true
+  },
+  "sit": {
+    "asset": "assets/sit.png",
+    "format": "sprite_sheet_png",
+    "frame_width": 64,
+    "frame_height": 64,
+    "frames": 3,
+    "fps": 4,
+    "loop": true
+  },
+  "sleep": {
+    "asset": "assets/sleep.png",
+    "format": "sprite_sheet_png",
+    "frame_width": 64,
+    "frame_height": 64,
+    "frames": 3,
+    "fps": 2,
+    "loop": true
+  },
+  "carry_ball": {
+    "asset": "assets/carry_ball.png",
+    "format": "sprite_sheet_png",
+    "frame_width": 64,
+    "frame_height": 64,
+    "frames": 6,
+    "fps": 8,
+    "loop": false
+  }
+}
