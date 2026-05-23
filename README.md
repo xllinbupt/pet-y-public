@@ -69,10 +69,11 @@ In two other terminals, start Alice and Bob desktop Runtimes:
 For a normal local user, start Runtime with the generic launcher. It creates a local identity automatically on first launch:
 
 ```bash
+./scripts/install-runtime.sh
 ./scripts/run-desktop.sh
 ```
 
-You can also build the desktop binary directly:
+Normal users do not need Xcode or local Swift compilation. The launcher uses the downloaded native Runtime in `bin/PetYDesktop`. Developers changing the Swift Runtime can still build it directly:
 
 ```bash
 npm run build:desktop
@@ -162,9 +163,10 @@ A friend can create a pet with:
 npm run create:pet -- --name Luma --pet-id pet_luma --style pixel --form "会发光的小星星" --signature glow --personality "安静、贴心，会在你分心时轻轻闪一下"
 ```
 
-Then run it:
+Then install the native Runtime and run it:
 
 ```bash
+./scripts/install-runtime.sh
 PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 ```
 
@@ -197,7 +199,7 @@ It is not the primary MVP Runtime. The primary Runtime is the native macOS deskt
 
 ## Current Limits
 
-The native Runtime is currently macOS-only and uses a simple Swift/AppKit implementation. It is not packaged as a `.app` bundle yet.
+The native Runtime is currently macOS-only and uses a simple Swift/AppKit implementation. It is distributed as a prebuilt command-line binary for normal users, not a `.app` bundle yet.
 
 The desktop Runtime no longer opens a large control window by default. Runtime controls live in the macOS menu bar under `Pet Y`.
 

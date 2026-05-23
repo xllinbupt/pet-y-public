@@ -6,5 +6,4 @@ if ! curl -fsS --max-time 2 "http://127.0.0.1:8787/api/bootstrap?user=alice" >/d
   echo "Relay 未连接。请先在另一个终端运行：npm start"
   exit 1
 fi
-npm run build:desktop >/dev/null
-exec .build/PetYDesktop --user alice --relay http://127.0.0.1:8787
+PET_Y_USER=alice PET_Y_RELAY=http://127.0.0.1:8787 exec ./scripts/run-desktop.sh
