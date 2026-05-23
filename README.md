@@ -4,6 +4,12 @@ Pet Y is an agent-generated social desktop pet prototype.
 
 Instead of shipping one fixed pet, Pet Y provides a workflow where an AI agent helps a user create a local desktop pet, run it on macOS, and let it visit friends through a lightweight Relay.
 
+Public repository:
+
+```text
+https://github.com/xllinbupt/pet-y-public
+```
+
 ## What It Does
 
 - Creates Pet Life Packs through an interview-style Skill.

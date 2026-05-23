@@ -1229,9 +1229,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         我的宠物叫 \(localPet.name)，它想去你的桌面玩。
 
+        公开说明在这里：
+        https://github.com/xllinbupt/pet-y-public
+
         你可以把下面这段话交给 Codex：
 
-        请帮我用 Pet Y 创建或启动一只桌面宠物，连接这个 Relay：
+        请根据 https://github.com/xllinbupt/pet-y-public 的说明，帮我创建或启动一只 Pet Y 桌面宠物，并连接这个 Relay：
         \(relayURL)
 
         启动后，在 Pet Y 菜单里选择“输入邀请码加好友”，粘贴这个邀请码：
