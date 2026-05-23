@@ -28,6 +28,8 @@ Use the Pet Y Skill to create my own desktop pet.
 
 Codex should first install and prepare the Pet Y project. This may take a little time.
 
+For normal users, Codex should download the prebuilt Pet Y Runtime. It should not ask you to fix Xcode, Swift, or macOS SDK versions.
+
 Then Codex should interview you one question at a time before generating your pet. It should ask about:
 
 - pet name
@@ -52,9 +54,10 @@ The server firewall or cloud security group must allow inbound TCP `8787`.
 
 ## 4. Run Your Pet
 
-Use the generated Life Pack:
+Install the native Runtime, then use the generated life pack:
 
 ```bash
+./scripts/install-runtime.sh
 PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/<name>/pet-life.json ./scripts/run-desktop.sh
 ```
 

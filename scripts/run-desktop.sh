@@ -19,5 +19,19 @@ if ! curl -fsS --max-time 2 "$relay/api/health" >/dev/null; then
   exit 1
 fi
 
-npm run build:desktop >/dev/null
-exec .build/PetYDesktop "${args[@]}"
+runtime="${PET_Y_RUNTIME:-}"
+if [[ -z "$runtime" ]]; then
+  if [[ -x "bin/PetYDesktop" ]]; then
+    runtime="bin/PetYDesktop"
+  elif [[ -x ".build/PetYDesktop" ]]; then
+    runtime=".build/PetYDesktop"
+  fi
+fi
+
+if [[ -z "$runtime" || ! -x "$runtime" ]]; then
+  echo "没有找到 Pet Y Runtime。请先运行：./scripts/install-runtime.sh"
+  echo "开发者也可以运行：npm run build:desktop"
+  exit 1
+fi
+
+exec "$runtime" "${args[@]}"

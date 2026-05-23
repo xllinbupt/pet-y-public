@@ -60,7 +60,12 @@ Then validate:
 
 ```bash
 node -e "JSON.parse(require('fs').readFileSync('life-packs/<name>/pet-life.json','utf8'))"
-npm run build:desktop
+```
+
+Install the native Runtime if `bin/PetYDesktop` is missing:
+
+```bash
+./scripts/install-runtime.sh
 ```
 
 Run the generated pet with:
@@ -70,6 +75,7 @@ PET_Y_LIFE_PACK=life-packs/<name>/pet-life.json ./scripts/run-desktop.sh
 ```
 
 Runtime creates a local identity automatically on first launch. Do not ask normal users to pick `alice` or `bob`; those are only demo identities.
+Do not ask normal users to build Swift locally. Only run `npm run build:desktop` when you changed the Swift Runtime itself.
 
 For a remote friend test, point Runtime at the shared Relay:
 

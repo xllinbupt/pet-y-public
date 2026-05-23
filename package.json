@@ -8,6 +8,8 @@
     "build:desktop": "swiftc -module-cache-path .build/module-cache macos-runtime/PetYDesktop.swift -o .build/PetYDesktop -framework AppKit",
     "check": "node --check server.js && node --check public/runtime.js && node --check scripts/create-pet-life-pack.js",
     "create:pet": "node scripts/create-pet-life-pack.js",
+    "install:runtime": "./scripts/install-runtime.sh",
+    "package:runtime": "./scripts/package-runtime.sh",
     "start": "node server.js",
     "start:public": "./scripts/start-relay-public.sh"
   }
