@@ -15,6 +15,12 @@ The project explores a desktop pet that is created and customized through an Age
 - [Pet Y Skill](./pet-y-skill/SKILL.md): the first project-local Skill entry for generating and editing Pet Life Packs.
 - [Friend Quickstart](./FRIEND_QUICKSTART.md): shortest current path for testing Pet Y with a real friend.
 
+Public friend-facing repository:
+
+```text
+https://github.com/xllinbupt/pet-y-public
+```
+
 ## MVP Prototype
 
 The first runnable MVP now has a native macOS desktop Runtime plus a no-dependency Node Relay.

@@ -4,6 +4,12 @@ This is the current MVP path for testing Pet Y with a real friend.
 
 ## 1. Install The Skill
 
+Public project page:
+
+```text
+https://github.com/xllinbupt/pet-y-public
+```
+
 From this project:
 
 ```bash
