@@ -915,6 +915,7 @@ final class ControlPanel: NSObject {
     var onSendVisit: ((String) -> Void)?
     var onReturn: (() -> Void)?
     var onCreateInvite: (() -> Void)?
+    var onShareInvite: (() -> Void)?
     var onAcceptInvite: (() -> Void)?
 
     override init() {
@@ -956,6 +957,7 @@ final class ControlPanel: NSObject {
         menu.addItem(.separator())
 
         menu.addItem(actionItem(title: "注册宠物名片", action: #selector(registerTapped)))
+        menu.addItem(actionItem(title: "邀请好友一起玩", action: #selector(shareInviteTapped)))
         menu.addItem(actionItem(title: "复制我的邀请码", action: #selector(createInviteTapped)))
         menu.addItem(actionItem(title: "输入邀请码加好友", action: #selector(acceptInviteTapped)))
         menu.addItem(.separator())
@@ -1002,6 +1004,7 @@ final class ControlPanel: NSObject {
     @objc private func sendTapped(_ sender: NSMenuItem) { onSendVisit?(sender.representedObject as? String ?? "") }
     @objc private func returnTapped() { onReturn?() }
     @objc private func createInviteTapped() { onCreateInvite?() }
+    @objc private func shareInviteTapped() { onShareInvite?() }
     @objc private func acceptInviteTapped() { onAcceptInvite?() }
     @objc private func quitTapped() { NSApp.terminate(nil) }
 }
@@ -1056,6 +1059,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onSendVisit = { [weak self] friend in self?.sendVisit(to: friend) }
         panel.onReturn = { [weak self] in self?.returnVisitor() }
         panel.onCreateInvite = { [weak self] in self?.createInvite() }
+        panel.onShareInvite = { [weak self] in self?.shareInvite() }
         panel.onAcceptInvite = { [weak self] in self?.promptForInvite() }
 
         restorePersistentLogToPanel()
@@ -1195,6 +1199,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private func shareInvite() {
+        let body = InviteRequest(user_id: userId, display_name: localPet.name)
+        relay.post("api/invites", body: body) { [weak self] (result: Result<InviteResponse, Error>) in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let response):
+                    guard let self else { return }
+                    let text = self.friendInviteText(token: response.invite.token)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    self.panel.setStatus("邀请文案已复制")
+                    self.sayLocal("邀请已经复制好啦。")
+                    self.log("已复制好友邀请。")
+                case .failure(let error):
+                    self?.sayLocal("邀请生成失败了。")
+                    self?.log("邀请生成失败：\(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private func friendInviteText(token: String) -> String {
+        let relayURL = relay.baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return """
+        我在玩 Pet Y，一只可以在朋友桌面之间串门的桌面宠物。
+
+        我的宠物叫 \(localPet.name)，它想去你的桌面玩。
+
+        你可以把下面这段话交给 Codex：
+
+        请帮我用 Pet Y 创建或启动一只桌面宠物，连接这个 Relay：
+        \(relayURL)
+
+        启动后，在 Pet Y 菜单里选择“输入邀请码加好友”，粘贴这个邀请码：
+
+        \(token)
+
+        你的宠物上线以后，我们就可以互相串门了。
+        """
     }
 
     private func promptForInvite() {
@@ -1454,6 +1499,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         actions.append(PetAction(title: "串门") { [weak self] in
             self?.showVisitChoices()
+        })
+        actions.append(PetAction(title: "邀请") { [weak self] in
+            self?.closeInteractionMenu()
+            self?.shareInvite()
         })
         actions.append(
             PetAction(title: "睡觉") { [weak self] in

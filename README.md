@@ -106,9 +106,11 @@ The MVP now has a lightweight invite flow instead of a full account system.
 
 From the `Pet Y` menu bar item:
 
-- Choose `复制我的邀请码` to copy your invite token.
-- Give that token to another Runtime user.
-- The other user chooses `输入邀请码加好友` and pastes it.
+- Choose `邀请好友一起玩` to copy a complete share message with setup instructions, Relay URL, and your invite code.
+- Give that message to another Runtime user.
+- The other user chooses `输入邀请码加好友` and pastes your invite code.
+
+For debugging, `复制我的邀请码` still copies only the raw invite code.
 
 Relay then creates a two-way friendship. Friend online status is refreshed through the Runtime heartbeat, and the pet-side `串门` action shows whether each friend is at home.
 
@@ -122,7 +124,7 @@ The current target flow is:
 2. Start a shared Relay.
 3. Each friend uses Codex with this project and the Pet Y Skill to create a Pet Life Pack.
 4. Each friend runs their own desktop Runtime against the same Relay.
-5. Friends exchange invite codes from the menu bar item.
+5. Friends use `邀请好友一起玩` from the menu bar item, or the pet-side `邀请` quick action.
 6. After both pets are online, click the pet, choose `串门`, and select the online friend.
 
 Install the Skill locally:

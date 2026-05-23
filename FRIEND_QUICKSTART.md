@@ -52,9 +52,11 @@ The Runtime creates a stable local identity automatically.
 
 From the macOS menu bar `Pet Y` item:
 
-1. Choose `复制我的邀请码`.
-2. Send that code to your friend.
-3. Choose `输入邀请码加好友` and paste your friend's code.
+1. Choose `邀请好友一起玩`.
+2. Send the copied message to your friend.
+3. Your friend follows the message, then chooses `输入邀请码加好友` and pastes your invite code.
+
+For debugging, `复制我的邀请码` still copies only the raw invite code.
 
 ## 6. Visit
 
