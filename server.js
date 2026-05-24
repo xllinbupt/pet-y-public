@@ -54,6 +54,7 @@ const users = new Map([
 const friendships = new Set(["alice:bob", "bob:alice"]);
 const profiles = new Map();
 const visits = new Map();
+const petMessages = new Map();
 const invites = new Map();
 const eventStreams = new Map();
 const eventMailboxes = new Map();
@@ -219,18 +220,31 @@ function safePetProfile(profile) {
   };
 }
 
+function cleanMessageText(text) {
+  return String(text || "").trim().slice(0, 500);
+}
+
+function storePetMessage(message) {
+  if (!petMessages.has(message.pet_id)) petMessages.set(message.pet_id, []);
+  const messages = petMessages.get(message.pet_id);
+  messages.push(message);
+  if (messages.length > 100) messages.shift();
+}
+
 function createMemoryReceipt(visit, reason = "departed") {
   const profile = profiles.get(visit.pet_id);
   const host = users.get(visit.host_user_id);
   const eventCount = visit.events.length;
   const dragged = visit.events.find((event) => event.type === "dragged");
   const fed = visit.events.find((event) => event.type === "fed");
+  const messages = visit.events.filter((event) => event.type === "message" && event.data?.text);
   const clicked = visit.events.filter((event) => event.type === "clicked").length;
   const parts = [`${profile?.name || "宠物"} 去了 ${host?.display_name || visit.host_user_id} 的桌面`];
 
   if (clicked > 0) parts.push(`被轻轻点了 ${clicked} 次`);
   if (dragged) parts.push("被带到了新的角落");
   if (fed) parts.push(`收到了一份${fed.data?.item || "小点心"}`);
+  if (messages.length > 0) parts.push(`收到了 ${messages.length} 条留言`);
 
   if (reason === "host_runtime_offline") parts.push("因为那边突然离线就回家了");
 
@@ -238,6 +252,9 @@ function createMemoryReceipt(visit, reason = "departed") {
   let petVoice = fed
     ? `我从 ${host?.display_name || "朋友"} 那里带回了${fed.data.item}，感觉今天被认真招待了。`
     : `我刚从 ${host?.display_name || "朋友"} 那里回来，那里有一块很适合发呆的地方。`;
+  if (!fed && messages.length > 0) {
+    petVoice = `我从 ${host?.display_name || "朋友"} 那里带回了留言。`;
+  }
 
   if (reason === "host_runtime_offline") {
     petVoice = `我刚刚在 ${host?.display_name || "朋友"} 那里玩，但那边突然安静下来了，我就先回家了。`;
@@ -444,19 +461,46 @@ async function handleApi(req, res, url) {
     const visit = visits.get(eventMatch[1]);
     if (!visit) return sendJson(res, 404, { error: "Visit not found" });
     const body = await readBody(req);
+    if (body.type === "message" && !cleanMessageText(body.data?.text)) {
+      return sendJson(res, 400, { error: "message text is required" });
+    }
     const event = {
       event_id: `event_${Date.now()}_${visit.events.length + 1}`,
       visit_id: visit.visit_id,
       pet_id: visit.pet_id,
       actor: body.actor || { type: "host_user", user_id: visit.host_user_id },
       type: body.type,
-      data: body.data || {},
+      data: body.type === "message" ? { ...body.data, text: cleanMessageText(body.data?.text) } : body.data || {},
       visibility: body.visibility || "owner_can_see",
       created_at: new Date().toISOString()
     };
     visit.events.push(event);
     emitTo(visit.owner_user_id, "interaction_event", event);
     return sendJson(res, 201, { event });
+  }
+
+  const messageMatch = url.pathname.match(/^\/api\/pets\/([^/]+)\/messages$/);
+  if (req.method === "POST" && messageMatch) {
+    const petId = messageMatch[1];
+    const profile = profiles.get(petId);
+    const body = await readBody(req);
+    const text = cleanMessageText(body.text);
+    if (!text) return sendJson(res, 400, { error: "message text is required" });
+
+    const message = {
+      message_id: `message_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      pet_id: petId,
+      owner_user_id: profile?.owner_user_id || body.owner_user_id || body.sender_user_id || "",
+      sender_user_id: body.sender_user_id || "",
+      text,
+      visibility: body.visibility || "owner_can_see",
+      created_at: new Date().toISOString()
+    };
+    storePetMessage(message);
+    if (message.owner_user_id && message.owner_user_id !== message.sender_user_id) {
+      emitTo(message.owner_user_id, "pet_message", message);
+    }
+    return sendJson(res, 201, { message });
   }
 
   const endMatch = url.pathname.match(/^\/api\/visits\/([^/]+)\/end$/);
