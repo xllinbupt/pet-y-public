@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.19"
+let PetYRuntimeVersion = "v0.1.20"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -517,7 +517,8 @@ struct PetAction {
 
 final class InteractionMenuWindow: NSWindow {
     init(origin: CGPoint, actions: [PetAction]) {
-        let width = CGFloat(max(1, actions.count) * 58 + 12)
+        let buttonWidths = InteractionMenuView.buttonWidths(for: actions)
+        let width = InteractionMenuView.menuWidth(for: buttonWidths)
         super.init(
             contentRect: NSRect(x: origin.x, y: origin.y, width: width, height: 48),
             styleMask: [.borderless],
@@ -530,20 +531,33 @@ final class InteractionMenuWindow: NSWindow {
         hasShadow = true
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        contentView = InteractionMenuView(frame: NSRect(x: 0, y: 0, width: width, height: 48), actions: actions)
+        contentView = InteractionMenuView(frame: NSRect(x: 0, y: 0, width: width, height: 48), actions: actions, buttonWidths: buttonWidths)
         makeKeyAndOrderFront(nil)
     }
 }
 
 final class InteractionMenuView: NSView {
     let actions: [PetAction]
+    let buttonWidths: [CGFloat]
 
-    init(frame frameRect: NSRect, actions: [PetAction]) {
+    static func buttonWidths(for actions: [PetAction]) -> [CGFloat] {
+        actions.map { action in
+            max(50, CGFloat(action.title.count) * 13 + 26)
+        }
+    }
+
+    static func menuWidth(for buttonWidths: [CGFloat]) -> CGFloat {
+        buttonWidths.reduce(16, +) + CGFloat(max(0, buttonWidths.count - 1) * 8)
+    }
+
+    init(frame frameRect: NSRect, actions: [PetAction], buttonWidths: [CGFloat]) {
         self.actions = actions
+        self.buttonWidths = buttonWidths
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
+        var x: CGFloat = 8
         for (index, action) in actions.enumerated() {
             let button = NSButton(title: action.title, target: self, action: #selector(actionTapped(_:)))
             button.tag = index
@@ -562,8 +576,10 @@ final class InteractionMenuView: NSView {
                     .foregroundColor: NSColor.black
                 ]
             )
-            button.frame = NSRect(x: 8 + index * 58, y: 8, width: 50, height: 30)
+            let width = buttonWidths[index]
+            button.frame = NSRect(x: x, y: 8, width: width, height: 30)
             addSubview(button)
+            x += width + 8
         }
     }
 
@@ -1679,14 +1695,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.putLocalPetToSleep()
             }
         )
-        interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: localWindow.frame, actionCount: actions.count), actions: actions)
+        interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: localWindow.frame, actions: actions), actions: actions)
     }
 
     private func showFriendActions() {
         guard let localWindow else { return }
         closeInteractionMenu()
         var actions = [
-            PetAction(title: "邀请") { [weak self] in
+            PetAction(title: "邀请好友一起玩") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.shareInvite()
             },
@@ -1722,7 +1738,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             sayLocal("想去谁家串门？")
         }
-        interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: localWindow.frame, actionCount: actions.count), actions: actions)
+        interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: localWindow.frame, actions: actions), actions: actions)
     }
 
     private func showVisitorInteractionMenu() {
@@ -1777,7 +1793,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             visitorView.say("我还不知道怎么和你互动。")
             return
         }
-        interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: visitorWindow.frame, actionCount: actions.count), actions: actions)
+        interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: visitorWindow.frame, actions: actions), actions: actions)
     }
 
     private func visitorInteractionCapabilities(for profile: PetProfile) -> Set<String> {
@@ -1793,8 +1809,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return capabilities
     }
 
-    private func menuOrigin(for petFrame: NSRect, actionCount: Int) -> CGPoint {
-        let width = CGFloat(max(1, actionCount) * 58 + 12)
+    private func menuOrigin(for petFrame: NSRect, actions: [PetAction]) -> CGPoint {
+        let width = InteractionMenuView.menuWidth(for: InteractionMenuView.buttonWidths(for: actions))
         return CGPoint(x: petFrame.midX - width / 2, y: petFrame.minY - 52)
     }
 
