@@ -1770,9 +1770,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     switch result {
                     case .success:
-                        self?.panel.setStatus("留言已送到 Relay")
+                        self?.panel.setStatus("留言已发送")
                         self?.remember("你给 \(self?.localPet.name ?? "宠物") 留言：\(text)")
-                        self?.log("留言已送到 Relay。")
+                        self?.log("留言已发送。")
                     case .failure(let error):
                         self?.panel.setStatus("留言失败")
                         self?.log("留言上传失败：\(error.localizedDescription)")
@@ -1818,7 +1818,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.icon = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "留言")
         alert.messageText = "给 \(targetName) 留言"
-        alert.informativeText = "这句话会送到 Relay，暂时不会要求宠物回复。"
+        alert.informativeText = "发送后会被记下来。宠物现在不会马上回复。"
         alert.addButton(withTitle: "发送")
         alert.addButton(withTitle: "取消")
 
