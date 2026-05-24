@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.20"
+let PetYRuntimeVersion = "v0.1.21"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -370,11 +370,13 @@ struct PollResponse: Codable {
 
 final class RelayClient {
     let baseURL: URL
+    let secret: String?
     let encoder = JSONEncoder()
     let decoder = JSONDecoder()
 
-    init(baseURL: URL) {
+    init(baseURL: URL, secret: String? = nil) {
         self.baseURL = baseURL
+        self.secret = secret?.isEmpty == true ? nil : secret
     }
 
     func get<T: Decodable>(_ path: String, completion: @escaping (Result<T, Error>) -> Void) {
@@ -398,6 +400,9 @@ final class RelayClient {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "content-type")
+        if let secret {
+            request.setValue(secret, forHTTPHeaderField: "x-pet-y-relay-secret")
+        }
         request.httpBody = body
 
         URLSession.shared.dataTask(with: request) { data, response, error in
@@ -1127,6 +1132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var friends: [FriendStatus] = []
     var lastEventId = 0
     var pollTimer: Timer?
+    var lastFriendOnlineNotifiedAt: [String: Date] = [:]
     var localSleepTimer: Timer?
     var localRoamTimer: Timer?
     var localAnimationTimer: Timer?
@@ -1137,10 +1143,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let localIdentity = LocalIdentityStore().loadOrCreate()
         let user = commandUser ?? localIdentity.user_id
         let relayURL = AppDelegate.value(after: "--relay", in: args) ?? "http://127.0.0.1:8787"
+        let relaySecret = AppDelegate.value(after: "--relay-secret", in: args) ?? ProcessInfo.processInfo.environment["PET_Y_RELAY_SECRET"]
         let lifePackPath = AppDelegate.value(after: "--life-pack", in: args)
         userId = user
         identity = commandUser == nil ? localIdentity : LocalIdentity(user_id: user, display_name: user)
-        relay = RelayClient(baseURL: URL(string: relayURL)!)
+        relay = RelayClient(baseURL: URL(string: relayURL)!, secret: relaySecret)
         lifePack = PetLifePackLoader.load(for: user, lifePackPath: lifePackPath)
         animationResolver = AnimationResolver(states: lifePack.pack.animation_states ?? [:])
         let runtimeProfile = lifePack.pack.profile.owned(by: user)
@@ -1337,6 +1344,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func friendInviteText(token: String) -> String {
         let relayURL = relay.baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let relayAccessText = relay.secret.map {
+            """
+
+            这个 Relay 需要访问口令。请让 Agent 在运行或绑定好友时设置：
+
+            PET_Y_RELAY_SECRET=\($0)
+            """
+        } ?? ""
         return """
         我在玩 Pet Y，一个可以让桌面宠物去朋友电脑上串门的小实验。
 
@@ -1353,6 +1368,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         请先生成并确认宠物形象，让它在本地桌面成功运行；运行成功后，再帮我绑定好友关系，并连接这个 Relay：
         \(relayURL)
+        \(relayAccessText)
 
         绑定好友时，请使用这段好友邀请口令：
 
@@ -1467,6 +1483,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 if case .success(let response) = result {
                     if let friends = response.friends {
+                        self.notifyNewlyOnlineFriends(friends)
                         self.friends = friends
                         self.panel.configure(title: self.panel.title, friends: friends)
                     }
@@ -1476,6 +1493,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
+        }
+    }
+
+    private func notifyNewlyOnlineFriends(_ nextFriends: [FriendStatus]) {
+        let previous = Dictionary(uniqueKeysWithValues: friends.map { ($0.user_id, $0.online) })
+        for friend in nextFriends {
+            guard friend.online, previous[friend.user_id] == false else { continue }
+            let lastNotified = lastFriendOnlineNotifiedAt[friend.user_id] ?? .distantPast
+            guard Date().timeIntervalSince(lastNotified) > 600 else { continue }
+            lastFriendOnlineNotifiedAt[friend.user_id] = Date()
+            panel.setStatus("\(friend.display_name) 在家了")
+            sayLocal("\(friend.display_name) 在家了，可以去串门。")
+            log("好友上线：\(friend.display_name)")
         }
     }
 

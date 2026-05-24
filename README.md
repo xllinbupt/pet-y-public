@@ -105,7 +105,7 @@ PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 Run against the shared Aliyun Relay:
 
 ```bash
-PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
+PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_RELAY_SECRET=<relay-access-code> PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 ```
 
 ## Demo Flow
@@ -148,7 +148,7 @@ The current target flow is:
 2. Start a shared Relay.
 3. Each friend uses an Agent with this project and the Pet Y Skill to create their own Pet Life Pack through an interview. Codex is preferred for image generation in the current MVP.
 4. Each friend runs their own desktop Runtime against the same Relay.
-5. Friends use `邀请好友一起玩` from the menu bar item, or the pet-side `邀请` quick action.
+5. Friends use `邀请好友一起玩` from the menu bar item, or the pet-side `邀请好友一起玩` quick action.
 6. After both pets are online, click the pet, choose `串门`, and select the online friend.
 
 Install the Skill locally:
@@ -234,6 +234,8 @@ Relay data can disappear in this MVP, but the owner's local pet memories survive
 The Relay writes privacy-friendly analytics events to `data/analytics.jsonl` by default. These events count product usage such as Runtime bootstrap, profile registration, invite creation, friend binding, visits, and interaction event types.
 
 The analytics log does not store invite tokens, message text, pet image assets, or local user files. User and pet identifiers are hashed before being written.
+
+When `PET_Y_RELAY_SECRET` is configured on the server, all non-public Relay API calls must include the same access code through `x-pet-y-relay-secret`, `Authorization: Bearer ...`, or the Runtime's `PET_Y_RELAY_SECRET` environment variable. This keeps the public Relay from being usable by random scanners.
 
 Admin stats are available from the Relay host:
 

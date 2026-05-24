@@ -89,16 +89,18 @@ The launcher stages Runtime and Life Pack files under `~/Library/Application Sup
 For a remote friend test, point Runtime at the shared Relay:
 
 ```bash
-PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_LIFE_PACK=life-packs/<name>/pet-life.json ./scripts/run-desktop.sh
+PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_RELAY_SECRET=<relay-access-code> PET_Y_LIFE_PACK=life-packs/<name>/pet-life.json ./scripts/run-desktop.sh
 ```
 
 After the pet is running locally, bind the friend invite phrase. Prefer the script so an Agent can finish setup without asking the user to manually paste in the Runtime UI:
 
 ```bash
-PET_Y_RELAY=http://47.99.98.43:8787 ./scripts/accept-friend-invite.sh <friend-invite-phrase>
+PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_RELAY_SECRET=<relay-access-code> ./scripts/accept-friend-invite.sh <friend-invite-phrase>
 ```
 
 Restart Runtime after binding the friend relationship so the menu and friend status refresh. After both users are online, click the pet and choose `串门`.
+
+If the invite text includes `PET_Y_RELAY_SECRET`, configure it for both running Runtime and accepting the friend invite. Treat it as the Relay access code, separate from the friend invite phrase.
 
 If macOS blocks the Runtime as unsafe, do not teach the user to bypass system security silently. Explain that this MVP is not yet a signed/notarized app, confirm the source repository and Release URL with the user, and prefer a signed/notarized `.app` packaging path for real distribution.
 
