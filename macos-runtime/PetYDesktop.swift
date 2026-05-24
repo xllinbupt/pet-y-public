@@ -819,7 +819,6 @@ final class PetView: NSView {
         }
 
         if drawSpriteFrameIfAvailable() {
-            drawLabel()
             return
         }
 
@@ -845,7 +844,6 @@ final class PetView: NSView {
         mouth.lineWidth = 2.5
         mouth.stroke()
 
-        drawLabel()
     }
 
     private func drawSpriteFrameIfAvailable() -> Bool {
@@ -867,16 +865,6 @@ final class PetView: NSView {
         )
         animationImage.draw(in: target, from: source, operation: .sourceOver, fraction: 1.0, respectFlipped: false, hints: [.interpolation: NSImageInterpolation.none])
         return true
-    }
-
-    private func drawLabel() {
-        let label = "\(profile.name)\(isVisitor ? " 来访中" : "")"
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 12),
-            .foregroundColor: NSColor.black
-        ]
-        let size = label.size(withAttributes: attributes)
-        label.draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: 5), withAttributes: attributes)
     }
 
     private func drawEar(_ rect: NSRect, rotation: CGFloat, color: NSColor) {
