@@ -248,6 +248,7 @@ function writeAssetTasks(filePath, pack) {
     "- One horizontal sprite sheet per action.",
     "- Every frame must be 64x64 after processing.",
     "- Keep the same pet identity across all actions.",
+    "- Movement sheets such as move, run, walk, or hop should face right; Runtime flips them when the pet moves left.",
     "- No text, watermark, shadows, floor, or background props.",
     "",
     "Tasks:",

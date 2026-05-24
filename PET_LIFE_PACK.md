@@ -189,6 +189,7 @@ life-packs/<pet-id>/pet-life.json
 - Relay 只保存 `profile` 快照，不保存完整生命包。
 - 宠物的完整生命包和记忆应该保存在主人本地。
 - 动画推荐使用 sprite sheet PNG，而不是 APNG/GIF。普通 PNG 不会自己动，但可以承载多帧素材，由 Runtime 按帧播放。
+- 移动类 sprite sheet 需要有统一朝向：`move` / `run` / `walk` / `hop` 默认面向右。Runtime 在宠物向左移动时负责水平翻转素材，生命包不需要为左右方向各准备一套图。
 - 复杂互动可以由多个动作语义组成。比如捡球不是单个 `carry_ball`，而是 `throw_ball_far -> move_to_target_scale_down -> pick_up_ball -> return_with_ball_scale_up -> rest`。这只是小狗案例，不是所有宠物的默认动作。
 - Runtime 可以在 sprite sheet 之外叠加空间效果，例如位置移动、缩放、气泡和道具窗口；生命包负责描述意图，Runtime 负责安全执行。
 - `interaction_capabilities` 用来声明来访时可接受的互动。Runtime 应只展示双方都支持的互动；旧生命包未声明时默认只支持 `petting`、`message`、`return_home`。`pet_to_pet.walk_together` 是第一版宠物和宠物之间的通用互动，表示两只宠物一起从桌面一处跑到另一处。

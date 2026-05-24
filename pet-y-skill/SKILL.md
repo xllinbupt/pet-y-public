@@ -129,6 +129,8 @@ For a generated pet, declare visitor interaction capabilities conservatively. De
 
 Use sprite sheet PNG. Plain PNG is not animated by itself; Runtime animates by stepping through frames.
 
+Direction matters for movement states. Generate `move` / `run` / `walk` / `hop` sprite sheets in a consistent canonical direction: the pet should face right. Runtime flips the sprite when the pet moves left. Do not mix left-facing and right-facing frames in the same sheet, or the pet will look like it is running backward.
+
 Do not call a pet finished just because the JSON and PNG files exist. A generated pet must pass a visual review: recognizable silhouette, consistent character identity, readable animation, and an appearance the user actually likes.
 
 The correct standard is model-generated or human-curated art. Programmatic drawing can be used only for throwaway engineering tests and must not be promoted as Skill output.

@@ -679,6 +679,7 @@ final class PetView: NSView {
     var animationImage: NSImage?
     var currentFrame = 0
     var renderScale: CGFloat = 1.0
+    var facingLeft = false
     var frameTimer: Timer?
     var scaleTimer: Timer?
     var returnToIdleTimer: Timer?
@@ -788,6 +789,12 @@ final class PetView: NSView {
 
     func setRenderScale(_ scale: CGFloat) {
         renderScale = min(max(scale, 0.45), 1.1)
+        needsDisplay = true
+    }
+
+    func faceMovement(from start: CGPoint, to end: CGPoint) {
+        guard abs(end.x - start.x) > 2 else { return }
+        facingLeft = end.x < start.x
         needsDisplay = true
     }
 
@@ -901,7 +908,18 @@ final class PetView: NSView {
             width: spriteSize,
             height: spriteSize
         )
-        animationImage.draw(in: target, from: source, operation: .sourceOver, fraction: 1.0, respectFlipped: false, hints: [.interpolation: NSImageInterpolation.none])
+        if facingLeft {
+            NSGraphicsContext.saveGraphicsState()
+            let transform = NSAffineTransform()
+            transform.translateX(by: target.midX, yBy: 0)
+            transform.scaleX(by: -1, yBy: 1)
+            transform.translateX(by: -target.midX, yBy: 0)
+            transform.concat()
+            animationImage.draw(in: target, from: source, operation: .sourceOver, fraction: 1.0, respectFlipped: false, hints: [.interpolation: NSImageInterpolation.none])
+            NSGraphicsContext.restoreGraphicsState()
+        } else {
+            animationImage.draw(in: target, from: source, operation: .sourceOver, fraction: 1.0, respectFlipped: false, hints: [.interpolation: NSImageInterpolation.none])
+        }
         return true
     }
 
@@ -1870,6 +1888,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         sayLocal("我们一起去那边玩。")
         (visitorWindow.contentView as? PetView)?.say("一起跑一下。")
+        (localWindow.contentView as? PetView)?.faceMovement(from: localStart, to: localTarget)
+        (visitorWindow.contentView as? PetView)?.faceMovement(from: visitorStart, to: visitorTarget)
         playLocal(.move)
         playVisitorMove()
         recordVisitEvent(
@@ -1972,6 +1992,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         localAnimationTimer?.invalidate()
         let start = localWindow.frame.origin
+        (localWindow.contentView as? PetView)?.faceMovement(from: start, to: origin)
         let startedAt = Date()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self, weak localWindow] timer in
             guard let self, let localWindow else {
