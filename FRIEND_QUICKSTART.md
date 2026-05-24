@@ -20,17 +20,17 @@ Restart Codex after installing the Skill.
 
 ## 2. Create A Pet
 
-Ask Codex:
+Ask your Agent, preferably Codex for image generation:
 
 ```text
 Use the Pet Y Skill to create my own desktop pet.
 ```
 
-Codex should first install and prepare the Pet Y project. This may take a little time.
+An Agent should first install and prepare the Pet Y project. Codex is preferred for this MVP because it can also help generate pet images. This may take a little time.
 
-For normal users, Codex should download the prebuilt Pet Y Runtime. It should not ask you to fix Xcode, Swift, or macOS SDK versions.
+For normal users, the Agent should download the prebuilt Pet Y Runtime. It should not ask you to fix Xcode, Swift, or macOS SDK versions.
 
-Then Codex should interview you one question at a time before generating your pet. It should ask about:
+Then the Agent should interview you one question at a time before generating your pet. It should ask about:
 
 - pet name
 - visual style
@@ -41,6 +41,7 @@ Then Codex should interview you one question at a time before generating your pe
 - how it should behave when visiting friends
 
 The invited friend should create their own pet. They should not simply run the inviter's sample dog.
+The correct order is: create and approve the pet image, run the pet locally, then bind the friend relationship.
 
 ## 3. Start The Shared Relay
 
@@ -76,7 +77,15 @@ From the macOS menu bar `Pet Y` item:
 
 1. Choose `邀请好友一起玩`.
 2. Send the copied message to your friend.
-3. Your friend follows the message, then chooses `输入好友邀请口令` and pastes your invite phrase.
+3. Your friend's Agent follows the message and can bind the relationship with:
+
+```bash
+PET_Y_RELAY=http://47.99.98.43:8787 ./scripts/accept-friend-invite.sh <friend-invite-phrase>
+```
+
+After binding, restart Pet Y Runtime. The inviter should receive a local reminder when the friend is added.
+
+If macOS blocks Runtime, pause and verify the repository and GitHub Release source. This MVP is not yet a signed/notarized app; real distribution should use a signed/notarized `.app`.
 
 ## 6. Visit
 

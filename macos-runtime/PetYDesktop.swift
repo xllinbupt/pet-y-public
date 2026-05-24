@@ -75,6 +75,10 @@ struct AcceptInviteResponse: Codable {
     let friends: [FriendStatus]
 }
 
+struct FriendAddedPayload: Codable {
+    let friend: FriendStatus?
+}
+
 struct VisitSession: Codable {
     let visit_id: String
     let pet_id: String
@@ -536,8 +540,21 @@ final class InteractionMenuView: NSView {
         for (index, action) in actions.enumerated() {
             let button = NSButton(title: action.title, target: self, action: #selector(actionTapped(_:)))
             button.tag = index
-            button.bezelStyle = .rounded
+            button.isBordered = false
+            button.wantsLayer = true
+            button.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.96).cgColor
+            button.layer?.cornerRadius = 8
+            button.layer?.borderWidth = 1
+            button.layer?.borderColor = NSColor.black.withAlphaComponent(0.14).cgColor
             button.font = .systemFont(ofSize: 12, weight: .semibold)
+            button.contentTintColor = NSColor.black
+            button.attributedTitle = NSAttributedString(
+                string: action.title,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                    .foregroundColor: NSColor.black
+                ]
+            )
             button.frame = NSRect(x: 8 + index * 58, y: 8, width: 50, height: 30)
             addSubview(button)
         }
@@ -566,11 +583,14 @@ final class InteractionMenuView: NSView {
 
 final class AwaySignView: NSView {
     let message: String
+    let onClick: () -> Void
     var dragStartScreen: CGPoint?
     var dragStartFrame: NSRect?
+    var didMove = false
 
-    init(message: String) {
+    init(message: String, onClick: @escaping () -> Void) {
         self.message = message
+        self.onClick = onClick
         super.init(frame: NSRect(x: 0, y: 0, width: 180, height: 118))
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -583,17 +603,23 @@ final class AwaySignView: NSView {
     override func mouseDown(with event: NSEvent) {
         dragStartScreen = NSEvent.mouseLocation
         dragStartFrame = window?.frame
+        didMove = false
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let window, let start = dragStartScreen, let frame = dragStartFrame else { return }
         let current = NSEvent.mouseLocation
+        if abs(current.x - start.x) + abs(current.y - start.y) > 3 { didMove = true }
         window.setFrameOrigin(NSPoint(x: frame.origin.x + current.x - start.x, y: frame.origin.y + current.y - start.y))
     }
 
     override func mouseUp(with event: NSEvent) {
+        if !didMove {
+            onClick()
+        }
         dragStartScreen = nil
         dragStartFrame = nil
+        didMove = false
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -625,7 +651,14 @@ final class AwaySignView: NSView {
             .foregroundColor: NSColor.black,
             .paragraphStyle: paragraph
         ]
-        NSString(string: message).draw(in: NSRect(x: 24, y: 42, width: 132, height: 30), withAttributes: attrs)
+        NSString(string: message).draw(in: NSRect(x: 24, y: 46, width: 132, height: 28), withAttributes: attrs)
+
+        let hintAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10, weight: .medium),
+            .foregroundColor: NSColor.black.withAlphaComponent(0.68),
+            .paragraphStyle: paragraph
+        ]
+        "点一下喊回家".draw(in: NSRect(x: 24, y: 32, width: 132, height: 12), withAttributes: hintAttrs)
     }
 }
 
@@ -1133,7 +1166,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         localWindow?.close()
         localWindow = nil
         awaySignWindow?.close()
-        let sign = AwaySignView(message: "我去 \(friend) 那儿")
+        let sign = AwaySignView(message: "我去 \(friend) 那儿") { [weak self] in
+            self?.recallLocalPet()
+        }
         awaySignWindow = AwaySignWindow(view: sign, origin: origin)
         panel?.setHasAwayPet(true)
     }
@@ -1267,20 +1302,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         公开说明在这里：
         https://github.com/xllinbupt/pet-y-public
 
-        你可以把下面这段话发给 Codex：
+        你可以把下面这段话发给 Agent。优先用 Codex，因为它可以直接帮你生成宠物图像：
 
         请根据 https://github.com/xllinbupt/pet-y-public 的说明，先安装和准备 Pet Y 项目，并下载预编译的 Pet Y Runtime。这个过程可能需要一点时间，不需要让我处理 Xcode、Swift 或 macOS SDK 编译问题。
 
         然后请访谈我，帮我创建一只属于我自己的桌面宠物。请问我宠物的名字、风格、外形、性格、动作、行为和它喜欢怎样陪伴我，不要直接运行邀请人的小狗。
 
-        创建完成后，请启动我的宠物，并连接这个 Relay：
+        请先生成并确认宠物形象，让它在本地桌面成功运行；运行成功后，再帮我绑定好友关系，并连接这个 Relay：
         \(relayURL)
 
-        启动后，在 Pet Y 菜单里选择“输入好友邀请口令”，粘贴这段口令：
+        绑定好友时，请使用这段好友邀请口令：
 
         \(token)
 
-        你的宠物上线以后，我们就可以互相串门了。
+        绑定完成后请重启一次 Pet Y Runtime。我的朋友那边会收到好友添加成功的提醒，然后我们就可以互相串门了。
         """
     }
 
@@ -1418,6 +1453,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                visit.status == "active" {
                 outgoingVisit = visit
                 panel.setHasAwayPet(true)
+            }
+        case "friend_added":
+            if let payload = try? decoder.decode(FriendAddedPayload.self, from: data),
+               let friend = payload.friend {
+                friends.removeAll { $0.user_id == friend.user_id }
+                friends.append(friend)
+                panel.configure(title: panel.title, friends: friends)
+                panel.setStatus("\(friend.display_name) 加好了")
+                sayLocal("\(friend.display_name) 来啦，我们已经是好友了。")
+                log("新好友已添加：\(friend.display_name)")
             }
         case "interaction_event":
             log("收到远端互动事件：\(event.type)")

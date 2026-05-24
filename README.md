@@ -113,10 +113,11 @@ The MVP now has a lightweight invite flow instead of a full account system.
 
 From the `Pet Y` menu bar item:
 
-- Choose `邀请好友一起玩` to copy a complete share message with setup instructions, Relay URL, and your invite code.
+- Choose `邀请好友一起玩` to copy a complete share message with setup instructions, Relay URL, and your friend invite phrase.
 - Give that message to another Runtime user.
-- The other user gives the message to Codex. Codex should install and prepare Pet Y, interview them, generate their own pet, then connect to the same Relay.
-- The other user chooses `输入好友邀请口令` and pastes your invite phrase.
+- The other user gives the message to an Agent. Codex is preferred for this MVP because it can help generate pet images.
+- The Agent should create and approve the pet image first, run the pet locally, then bind the friend relationship with `./scripts/accept-friend-invite.sh`.
+- The inviter receives a local reminder after the friend is added.
 
 Relay then creates a two-way friendship. Friend online status is refreshed through the Runtime heartbeat, and the pet-side `串门` action shows whether each friend is at home.
 
@@ -128,7 +129,7 @@ The current target flow is:
 
 1. Install the project-local Pet Y Skill.
 2. Start a shared Relay.
-3. Each friend uses Codex with this project and the Pet Y Skill to create their own Pet Life Pack through an interview.
+3. Each friend uses an Agent with this project and the Pet Y Skill to create their own Pet Life Pack through an interview. Codex is preferred for image generation in the current MVP.
 4. Each friend runs their own desktop Runtime against the same Relay.
 5. Friends use `邀请好友一起玩` from the menu bar item, or the pet-side `邀请` quick action.
 6. After both pets are online, click the pet, choose `串门`, and select the online friend.
