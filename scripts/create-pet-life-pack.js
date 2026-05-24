@@ -120,8 +120,8 @@ function parseArgs(argv) {
   return parsed;
 }
 
-function animationState(description, asset, frames, fps, loop) {
-  return {
+function animationState(description, asset, frames, fps, loop, defaultFacing = null) {
+  const state = {
     description,
     asset,
     format: "sprite_sheet_png",
@@ -131,15 +131,17 @@ function animationState(description, asset, frames, fps, loop) {
     fps,
     loop
   };
+  if (defaultFacing) state.default_facing = defaultFacing;
+  return state;
 }
 
 function buildAnimationStates(signatureState) {
   return {
-    idle: animationState("待机，有轻微呼吸感或小幅摆动。", "assets/idle.png", 4, 6, true),
-    move: animationState("移动到目标位置，保持角色身份一致。", "assets/move.png", 6, 7, true),
-    rest: animationState("安静停留或坐下，看向用户。", "assets/rest.png", 3, 4, true),
-    sleep: animationState("进入休息或睡觉状态，有轻微呼吸感。", "assets/sleep.png", 3, 2, true),
-    [signatureState]: animationState("招牌互动动作。", `assets/${signatureState}.png`, 6, 6, false)
+    idle: animationState("待机，有轻微呼吸感或小幅摆动。", "assets/idle.png", 4, 6, true, "none"),
+    move: animationState("移动到目标位置，保持角色身份一致。", "assets/move.png", 6, 7, true, "right"),
+    rest: animationState("安静停留或坐下，看向用户。", "assets/rest.png", 3, 4, true, "none"),
+    sleep: animationState("进入休息或睡觉状态，有轻微呼吸感。", "assets/sleep.png", 3, 2, true, "none"),
+    [signatureState]: animationState("招牌互动动作。", `assets/${signatureState}.png`, 6, 6, false, signatureState === "carry_ball" ? "right" : "none")
   };
 }
 
@@ -250,7 +252,8 @@ function writeAssetTasks(filePath, pack) {
     "- One horizontal sprite sheet per action.",
     "- Every frame must be 64x64 after processing.",
     "- Keep the same pet identity across all actions.",
-    "- Movement sheets such as move, run, walk, or hop should face right; Runtime flips them when the pet moves left.",
+    "- Movement sheets such as move, run, walk, or hop should face right by default; if the approved sheet faces left, set that state's default_facing to left in pet-life.json.",
+    "- Use default_facing none for front-facing or directionless states. Do not mix left-facing and right-facing frames in one sheet.",
     "- No text, watermark, shadows, floor, or background props.",
     "",
     "Tasks:",

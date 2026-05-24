@@ -296,6 +296,8 @@ New life packs should prefer generic Runtime action names: `idle`, `move`, `rest
 
 The current Runtime plays `animation_states.idle` when the life pack has an `assets/idle.png` sprite sheet. If the asset is missing, it falls back to the built-in drawn pet.
 
+Directional animation states can declare `default_facing`: `right`, `left`, or `none`. Missing values default to `right` for backward compatibility. Use `none` for front-facing or directionless states, and keep every frame in a sprite sheet facing the same way.
+
 Momo currently uses these local animation triggers:
 
 - Idle: default loop.
