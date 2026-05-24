@@ -1,8 +1,6 @@
 const params = new URLSearchParams(window.location.search);
 const pathUser = window.location.pathname.includes("bob") ? "bob" : "alice";
 const userId = params.get("user") || pathUser;
-const relaySecret = params.get("relay_secret") || localStorage.getItem("pet-y:relay-secret") || "";
-if (relaySecret) localStorage.setItem("pet-y:relay-secret", relaySecret);
 
 const defaultPets = {
   alice: {
@@ -72,7 +70,6 @@ async function api(path, options = {}) {
     ...options,
     headers: {
       "content-type": "application/json",
-      ...(relaySecret ? { "x-pet-y-relay-secret": relaySecret } : {}),
       ...(options.headers || {})
     }
   });
@@ -275,7 +272,6 @@ function handleMemoryReceipt(receipt) {
 
 function connectEvents() {
   const eventParams = new URLSearchParams({ user: userId });
-  if (relaySecret) eventParams.set("relay_secret", relaySecret);
   const source = new EventSource(`/events?${eventParams.toString()}`);
   source.addEventListener("open", () => {
     $(".status-dot").classList.add("connected");

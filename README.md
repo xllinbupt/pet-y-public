@@ -105,7 +105,7 @@ PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 Run against the shared Aliyun Relay:
 
 ```bash
-PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_RELAY_SECRET=<relay-access-code> PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
+PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 ```
 
 ## Demo Flow
@@ -235,7 +235,7 @@ The Relay writes privacy-friendly analytics events to `data/analytics.jsonl` by 
 
 The analytics log does not store invite tokens, message text, pet image assets, or local user files. User and pet identifiers are hashed before being written.
 
-When `PET_Y_RELAY_SECRET` is configured on the server, all non-public Relay API calls must include the same access code through `x-pet-y-relay-secret`, `Authorization: Bearer ...`, or the Runtime's `PET_Y_RELAY_SECRET` environment variable. This keeps the public Relay from being usable by random scanners.
+Normal users do not need a Relay access code. Friend invite phrases are the user-facing authorization model for adding relationships. Admin stats remain protected by local-only access or `PET_Y_ADMIN_TOKEN`.
 
 Admin stats are available from the Relay host:
 

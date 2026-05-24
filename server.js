@@ -11,7 +11,6 @@ const host = process.env.HOST || "127.0.0.1";
 const analyticsPath = process.env.PET_Y_ANALYTICS_PATH || path.join(__dirname, "data", "analytics.jsonl");
 const analyticsSalt = process.env.PET_Y_ANALYTICS_SALT || "pet-y-mvp";
 const adminToken = process.env.PET_Y_ADMIN_TOKEN || "";
-const relaySecret = process.env.PET_Y_RELAY_SECRET || "";
 
 const users = new Map([
   [
@@ -147,24 +146,6 @@ function isLocalRequest(req) {
 function canReadAdminStats(req, url) {
   if (adminToken && url.searchParams.get("token") === adminToken) return true;
   return isLocalRequest(req);
-}
-
-function requestRelaySecret(req, url) {
-  const auth = req.headers.authorization || "";
-  if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
-  return req.headers["x-pet-y-relay-secret"] || url.searchParams.get("relay_secret") || "";
-}
-
-function isPublicApi(req, url) {
-  if (req.method === "GET" && url.pathname === "/api/health") return true;
-  if (req.method === "GET" && url.pathname === "/api/admin/stats") return true;
-  return false;
-}
-
-function hasRelayAccess(req, url) {
-  if (!relaySecret) return true;
-  if (isPublicApi(req, url)) return true;
-  return requestRelaySecret(req, url) === relaySecret;
 }
 
 function currentStats() {
@@ -474,10 +455,6 @@ function reconcileActiveVisits() {
 }
 
 async function handleApi(req, res, url) {
-  if (!hasRelayAccess(req, url)) {
-    return sendJson(res, 401, { error: "Relay access code is required" });
-  }
-
   if (req.method === "GET" && url.pathname === "/api/health") {
     return sendJson(res, 200, { ok: true, now: new Date().toISOString() });
   }
@@ -703,7 +680,6 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "GET" && url.pathname === "/events") {
       const userId = url.searchParams.get("user");
-      if (!hasRelayAccess(req, url)) return sendJson(res, 401, { error: "Relay access code is required" });
       if (!users.has(userId)) return sendJson(res, 404, { error: "Unknown user" });
       res.writeHead(200, {
         "content-type": "text/event-stream; charset=utf-8",

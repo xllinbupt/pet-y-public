@@ -25,9 +25,6 @@ fi
 
 body="$(node -e "console.log(JSON.stringify({user_id: process.argv[1], token: process.argv[2]}))" "$user_id" "$token")"
 headers=(-H "content-type: application/json")
-if [[ -n "${PET_Y_RELAY_SECRET:-}" ]]; then
-  headers+=(-H "x-pet-y-relay-secret: $PET_Y_RELAY_SECRET")
-fi
 
 curl -fsS -X POST "$relay/api/friends/accept" \
   "${headers[@]}" \
