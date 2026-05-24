@@ -299,7 +299,7 @@ enum PetLifePackLoader {
                 preview: "#ee7b6c",
                 personality_card: "外向、爱凑热闹，会把来访朋友带到屏幕边缘玩。",
                 projection_capabilities: ["idle", "walk", "sleep", "react_to_click", "react_to_drag", "receive_gift"],
-                interaction_capabilities: ["petting", "message", "return_home", "gift.simple", "pet_to_pet.walk_together"]
+                interaction_capabilities: ["petting", "message", "return_home", "gift.simple", "pet_to_pet.greeting", "pet_to_pet.sit_together", "pet_to_pet.walk_together"]
             )
         }
         return PetProfile(
@@ -312,7 +312,7 @@ enum PetLifePackLoader {
             preview: "#6bc6a8",
             personality_card: "慢热但好奇，喜欢被轻轻拖到新的观察点。",
             projection_capabilities: ["idle", "walk", "sleep", "react_to_click", "react_to_drag", "receive_gift"],
-            interaction_capabilities: ["petting", "message", "return_home", "gift.simple", "pet_to_pet.walk_together"]
+            interaction_capabilities: ["petting", "message", "return_home", "gift.simple", "pet_to_pet.greeting", "pet_to_pet.sit_together", "pet_to_pet.walk_together"]
         )
     }
 }
@@ -1746,6 +1746,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.feedVisitor()
             })
         }
+        if capabilities.contains("pet_to_pet.greeting"), localWindow != nil {
+            actions.append(PetAction(title: "打招呼") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.greetVisitorWithLocalPet()
+            })
+        }
+        if capabilities.contains("pet_to_pet.sit_together"), localWindow != nil {
+            actions.append(PetAction(title: "坐一会儿") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.sitTogetherWithVisitor()
+            })
+        }
         if capabilities.contains("pet_to_pet.walk_together"), localWindow != nil {
             actions.append(PetAction(title: "一起玩") { [weak self] in
                 self?.closeInteractionMenu()
@@ -1766,12 +1778,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func visitorInteractionCapabilities(for profile: PetProfile) -> Set<String> {
-        let runtimeSupported: Set<String> = ["petting", "message", "return_home", "gift.simple", "pet_to_pet.walk_together"]
+        let runtimeSupported: Set<String> = ["petting", "message", "return_home", "gift.simple", "pet_to_pet.greeting", "pet_to_pet.sit_together", "pet_to_pet.walk_together"]
         let petSupported = Set(profile.interaction_capabilities ?? ["petting", "message", "return_home"])
         let localSupported = Set(localPet.interaction_capabilities ?? ["petting", "message", "return_home"])
         var capabilities = runtimeSupported.intersection(petSupported)
-        if !localSupported.contains("pet_to_pet.walk_together") {
-            capabilities.remove("pet_to_pet.walk_together")
+        for petToPetCapability in ["pet_to_pet.greeting", "pet_to_pet.sit_together", "pet_to_pet.walk_together"] {
+            if !localSupported.contains(petToPetCapability) {
+                capabilities.remove(petToPetCapability)
+            }
         }
         return capabilities
     }
@@ -1868,6 +1882,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onSubmit(String(text.prefix(500)))
     }
 
+    private func greetVisitorWithLocalPet() {
+        guard visitorWindow != nil else {
+            log("现在没有来串门的小客人。")
+            return
+        }
+        sayLocal("你好呀。")
+        (visitorWindow?.contentView as? PetView)?.say("我来玩一会儿。")
+        playLocal(.rest, returnToIdleAfter: 1.8)
+        playVisitorRest(returnToIdleAfter: 1.8)
+        recordVisitEvent(
+            type: "pet_to_pet.greeting",
+            data: [
+                "local_pet_id": localPet.pet_id,
+                "visitor_pet_id": visitorVisit?.pet_id ?? ""
+            ]
+        )
+        remember("\(localPet.name) 和来访的小客人打了招呼。")
+        scheduleLocalSleep()
+        scheduleLocalRoam()
+    }
+
+    private func sitTogetherWithVisitor() {
+        guard let localWindow, let visitorWindow else {
+            log("现在没有来串门的小客人。")
+            return
+        }
+        localSleepTimer?.invalidate()
+        localRoamTimer?.invalidate()
+        localAnimationTimer?.invalidate()
+
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let localStart = localWindow.frame.origin
+        let visitorStart = visitorWindow.frame.origin
+        let rightTargetX = localStart.x + 92
+        let leftTargetX = localStart.x - 92
+        let targetX = rightTargetX + visitorWindow.frame.width < screen.maxX
+            ? rightTargetX
+            : max(screen.minX + 40, leftTargetX)
+        let visitorTarget = CGPoint(
+            x: targetX,
+            y: min(max(localStart.y, screen.minY + 70), screen.maxY - 170)
+        )
+        let duration = localMoveDuration(from: visitorStart, to: visitorTarget, speed: 280, minimum: 0.9, maximum: 2.4)
+
+        sayLocal("坐这里吧。")
+        (visitorWindow.contentView as? PetView)?.say("我坐一会儿。")
+        (visitorWindow.contentView as? PetView)?.faceMovement(from: visitorStart, to: visitorTarget)
+        playLocal(.rest)
+        playVisitorMove()
+        recordVisitEvent(
+            type: "pet_to_pet.sit_together",
+            data: [
+                "local_pet_id": localPet.pet_id,
+                "visitor_pet_id": visitorVisit?.pet_id ?? "",
+                "from_x": "\(Int(visitorStart.x))",
+                "from_y": "\(Int(visitorStart.y))",
+                "to_x": "\(Int(visitorTarget.x))",
+                "to_y": "\(Int(visitorTarget.y))"
+            ]
+        )
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            visitorWindow.animator().setFrameOrigin(visitorTarget)
+        } completionHandler: { [weak self] in
+            guard let self else { return }
+            self.playLocal(.rest, returnToIdleAfter: 2.8)
+            self.playVisitorRest(returnToIdleAfter: 2.8)
+            self.remember("\(self.localPet.name) 和来访的小客人靠在一起坐了一会儿。")
+            self.scheduleLocalRoam()
+            self.scheduleLocalSleep()
+        }
+    }
+
     private func playTogetherWithVisitor() {
         guard let localWindow, let visitorWindow else {
             log("现在没有来串门的小客人。")
@@ -1915,6 +2004,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.remember("\(self?.localPet.name ?? "宠物") 和来访的小客人一起在桌面上跑了一段。")
             self?.scheduleLocalRoam()
             self?.scheduleLocalSleep()
+        }
+    }
+
+    private func playVisitorRest(returnToIdleAfter delay: TimeInterval? = nil) {
+        guard let visitorView = visitorWindow?.contentView as? PetView else { return }
+        for state in ["rest", "sit", "idle"] {
+            if visitorView.animationStates[state] != nil {
+                visitorView.play(state, returnToIdleAfter: delay)
+                return
+            }
         }
     }
 

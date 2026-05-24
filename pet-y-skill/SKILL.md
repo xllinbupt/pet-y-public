@@ -125,7 +125,16 @@ For a generated pet, include at least:
 
 Prefer generic action names for new pets. Dog-specific states such as `run`, `sit`, and `carry_ball` are supported as legacy/example fallbacks, not as the default shape for every pet.
 
-For a generated pet, declare visitor interaction capabilities conservatively. Default to `petting`, `message`, `return_home`, and `pet_to_pet.walk_together`; add capabilities such as `gift.simple` only when the pet's concept and behavior support them.
+For a generated pet, declare visitor interaction capabilities conservatively. Default to `petting`, `message`, `return_home`, `pet_to_pet.greeting`, `pet_to_pet.sit_together`, and `pet_to_pet.walk_together`; add capabilities such as `gift.simple` only when the pet's concept and behavior support them.
+
+Baseline interactions must be portable across pet forms. The Runtime can compose them from generic states instead of requiring bespoke art:
+
+- `petting`: use `rest` or a small affection reaction.
+- `message`: record a host message for a visiting pet.
+- `return_home`: let a host send a visiting pet back.
+- `pet_to_pet.greeting`: both pets acknowledge each other with short bubbles.
+- `pet_to_pet.sit_together`: the visitor moves near the local pet and both enter `rest`.
+- `pet_to_pet.walk_together`: both pets move across the desktop together using `move`.
 
 Use sprite sheet PNG. Plain PNG is not animated by itself; Runtime animates by stepping through frames.
 

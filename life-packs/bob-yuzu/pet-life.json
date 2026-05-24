@@ -22,6 +22,8 @@
       "message",
       "return_home",
       "gift.simple",
+      "pet_to_pet.greeting",
+      "pet_to_pet.sit_together",
       "pet_to_pet.walk_together"
     ]
   },
@@ -88,8 +90,16 @@
     }
   },
   "behavior": {
-    "home_states": ["idle", "playful", "curious"],
-    "away_states": ["departing", "visiting", "returning"],
+    "home_states": [
+      "idle",
+      "playful",
+      "curious"
+    ],
+    "away_states": [
+      "departing",
+      "visiting",
+      "returning"
+    ],
     "state_transitions": [
       {
         "from": "idle",
@@ -124,7 +134,16 @@
   },
   "memory_rules": {
     "summary_style": "把事件讲得轻快一点，像真的出去玩了一趟。",
-    "remember_events": ["dragged", "fed", "host_runtime_offline", "host_requested_return"]
+    "remember_events": [
+      "dragged",
+      "fed",
+      "host_runtime_offline",
+      "host_requested_return",
+      "message",
+      "pet_to_pet.greeting",
+      "pet_to_pet.sit_together",
+      "pet_to_pet.walk_together"
+    ]
   },
   "visit_preferences": {
     "likes_visiting": true,

@@ -48,6 +48,7 @@ Pet Y 现在处于真实好友 MVP 阶段。
 - 出门牌子可以点击，快速喊宠物回家。
 - 来访宠物会自动出现在好友桌面。
 - 宿主可以摸摸、拖拽、留言、投喂或送回家，具体按钮按能力过滤。
+- 本地宠物和来访宠物支持基础互动：打招呼、坐一会儿、一起玩。
 - 如果宿主 Runtime 离线，Relay 会自动结束串门，让宠物回家。
 
 ### 协议与能力声明
@@ -57,6 +58,7 @@ Pet Y 现在处于真实好友 MVP 阶段。
 - Runtime 会取“宿主 Runtime 支持能力”和“来访宠物声明能力”的交集，只展示双方都支持的互动。
 - 旧宠物没有声明时，默认只支持 `petting`、`message`、`return_home`。
 - 留言作为 `VisitEvent` 的 `message` 事件进入 Relay，暂时不要求宠物回复。
+- 宠物间互动使用 `pet_to_pet.greeting`、`pet_to_pet.sit_together`、`pet_to_pet.walk_together` 这些通用事件，不绑定某一种动物动作。
 
 ### Skill 与公开分享
 
@@ -64,7 +66,7 @@ Pet Y 现在处于真实好友 MVP 阶段。
 - Skill 要求 Agent 先访谈用户，再生成宠物形象、动作状态、互动能力和 Life Pack。
 - Skill 明确要求不要用代码画正式宠物素材，正式素材应由图像模型生成或人工整理。
 - 公开仓库 `xllinbupt/pet-y-public` 已建立。
-- 公开 Runtime Release 已发布到 `v0.1.14`。
+- 公开 Runtime Release 已发布到 `v0.1.16`。
 - 好友 Quickstart 已说明：朋友应创建自己的宠物，不应直接运行邀请人的小狗。
 
 ## 3. 当前限制
