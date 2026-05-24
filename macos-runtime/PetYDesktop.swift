@@ -1,6 +1,8 @@
 import AppKit
 import Foundation
 
+let PetYRuntimeVersion = "v0.1.18"
+
 struct PetProfile: Codable {
     let pet_id: String
     let owner_user_id: String
@@ -982,6 +984,7 @@ final class ControlPanel: NSObject {
     override init() {
         super.init()
         statusItem.button?.title = "Pet Y"
+        statusItem.button?.toolTip = "Pet Y Runtime \(PetYRuntimeVersion)"
         rebuildMenu()
     }
 
@@ -1018,7 +1021,7 @@ final class ControlPanel: NSObject {
     private func rebuildMenu() {
         let menu = NSMenu()
 
-        let titleItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let titleItem = NSMenuItem(title: "\(title) · \(PetYRuntimeVersion)", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         menu.addItem(titleItem)
 
@@ -1242,7 +1245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.friends = friends
                     self?.panel.configure(title: "\(self?.localPet.name ?? response.user.display_name) Runtime", friends: friends)
                     self?.panel.setStatus("已连接 Relay")
-                    self?.log("桌面 Runtime 已启动。")
+                    self?.log("桌面 Runtime \(PetYRuntimeVersion) 已启动。")
                     self?.registerProfile()
                     self?.startPolling()
                 case .failure(let error):
