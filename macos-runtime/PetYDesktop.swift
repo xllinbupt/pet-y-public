@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.21"
+let PetYRuntimeVersion = "v0.1.22"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -1503,7 +1503,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let lastNotified = lastFriendOnlineNotifiedAt[friend.user_id] ?? .distantPast
             guard Date().timeIntervalSince(lastNotified) > 600 else { continue }
             lastFriendOnlineNotifiedAt[friend.user_id] = Date()
-            panel.setStatus("\(friend.display_name) 在家了")
             sayLocal("\(friend.display_name) 在家了，可以去串门。")
             log("好友上线：\(friend.display_name)")
         }
