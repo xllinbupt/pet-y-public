@@ -929,7 +929,6 @@ final class ControlPanel: NSObject {
     var recentLogs: [String] = []
     var onSendVisit: ((String) -> Void)?
     var onReturn: (() -> Void)?
-    var onCreateInvite: (() -> Void)?
     var onShareInvite: (() -> Void)?
     var onAcceptInvite: (() -> Void)?
 
@@ -975,7 +974,6 @@ final class ControlPanel: NSObject {
         let friendsMenu = NSMenu()
         friendsMenu.addItem(actionItem(title: "邀请好友一起玩", action: #selector(shareInviteTapped)))
         friendsMenu.addItem(actionItem(title: "输入邀请码加好友", action: #selector(acceptInviteTapped)))
-        friendsMenu.addItem(actionItem(title: "复制我的邀请码", action: #selector(createInviteTapped)))
         friendsMenu.addItem(.separator())
         if friends.isEmpty {
             let item = NSMenuItem(title: "暂无好友", action: nil, keyEquivalent: "")
@@ -1020,7 +1018,6 @@ final class ControlPanel: NSObject {
 
     @objc private func sendTapped(_ sender: NSMenuItem) { onSendVisit?(sender.representedObject as? String ?? "") }
     @objc private func returnTapped() { onReturn?() }
-    @objc private func createInviteTapped() { onCreateInvite?() }
     @objc private func shareInviteTapped() { onShareInvite?() }
     @objc private func acceptInviteTapped() { onAcceptInvite?() }
     @objc private func quitTapped() { NSApp.terminate(nil) }
@@ -1074,7 +1071,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel = ControlPanel()
         panel.onSendVisit = { [weak self] friend in self?.sendVisit(to: friend) }
         panel.onReturn = { [weak self] in self?.returnVisitor() }
-        panel.onCreateInvite = { [weak self] in self?.createInvite() }
         panel.onShareInvite = { [weak self] in self?.shareInvite() }
         panel.onAcceptInvite = { [weak self] in self?.promptForInvite() }
 
@@ -1224,25 +1220,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             blobs[state.asset] = data.base64EncodedString()
         }
         return blobs
-    }
-
-    private func createInvite() {
-        let body = InviteRequest(user_id: userId, display_name: localPet.name)
-        relay.post("api/invites", body: body) { [weak self] (result: Result<InviteResponse, Error>) in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let response):
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(response.invite.token, forType: .string)
-                    self?.panel.setStatus("邀请码已复制")
-                    self?.sayLocal("邀请码已经复制好啦。")
-                    self?.log("已复制邀请码：\(response.invite.token)")
-                case .failure(let error):
-                    self?.sayLocal("邀请码生成失败了。")
-                    self?.log("邀请码生成失败：\(error.localizedDescription)")
-                }
-            }
-        }
     }
 
     private func shareInvite() {
