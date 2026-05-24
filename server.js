@@ -215,6 +215,7 @@ function safePetProfile(profile) {
     preview: profile.preview,
     personality_card: profile.personality_card,
     projection_capabilities: profile.projection_capabilities,
+    interaction_capabilities: profile.interaction_capabilities || null,
     updated_at: profile.updated_at
   };
 }
