@@ -1,4 +1,5 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || "127.0.0.1";
+const analyticsPath = process.env.PET_Y_ANALYTICS_PATH || path.join(__dirname, "data", "analytics.jsonl");
+const analyticsSalt = process.env.PET_Y_ANALYTICS_SALT || "pet-y-mvp";
+const adminToken = process.env.PET_Y_ADMIN_TOKEN || "";
 
 const users = new Map([
   [
@@ -60,6 +64,110 @@ const eventMailboxes = new Map();
 const runtimePresence = new Map();
 let eventSequence = 0;
 const onlineTimeoutMs = 6_000;
+const counters = new Map();
+const seenUsers = new Set();
+const seenPets = new Set();
+
+function countMetric(name, amount = 1) {
+  counters.set(name, (counters.get(name) || 0) + amount);
+}
+
+function anonymize(value) {
+  if (!value) return null;
+  return crypto.createHash("sha256").update(`${analyticsSalt}:${value}`).digest("hex").slice(0, 16);
+}
+
+function recordAnalytics(name, fields = {}) {
+  countMetric(name);
+  const userIds = [fields.user_id, fields.owner_user_id, fields.host_user_id, fields.actor_user_id].filter(Boolean);
+  for (const userId of userIds) seenUsers.add(userId);
+  if (fields.pet_id) seenPets.add(fields.pet_id);
+
+  const entry = {
+    at: new Date().toISOString(),
+    name,
+    user_hash: anonymize(fields.user_id),
+    owner_hash: anonymize(fields.owner_user_id),
+    host_hash: anonymize(fields.host_user_id),
+    actor_hash: anonymize(fields.actor_user_id),
+    pet_hash: anonymize(fields.pet_id),
+    event_type: fields.event_type || null,
+    reason: fields.reason || null
+  };
+
+  fs.mkdir(path.dirname(analyticsPath), { recursive: true }, (error) => {
+    if (error) return;
+    fs.appendFile(analyticsPath, `${JSON.stringify(entry)}\n`, () => {});
+  });
+}
+
+function analyticsSummaryFromFile() {
+  const summary = {
+    events_total: 0,
+    counters: {},
+    unique_users: 0,
+    unique_pets: 0,
+    event_types: {},
+    last_event_at: null
+  };
+  if (!fs.existsSync(analyticsPath)) return summary;
+
+  const userHashes = new Set();
+  const petHashes = new Set();
+  const lines = fs.readFileSync(analyticsPath, "utf8").split("\n");
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line);
+      summary.events_total += 1;
+      summary.last_event_at = entry.at || summary.last_event_at;
+      summary.counters[entry.name] = (summary.counters[entry.name] || 0) + 1;
+      for (const key of ["user_hash", "owner_hash", "host_hash", "actor_hash"]) {
+        if (entry[key]) userHashes.add(entry[key]);
+      }
+      if (entry.pet_hash) petHashes.add(entry.pet_hash);
+      if (entry.event_type) {
+        summary.event_types[entry.event_type] = (summary.event_types[entry.event_type] || 0) + 1;
+      }
+    } catch {
+      // Ignore malformed analytics lines.
+    }
+  }
+  summary.unique_users = userHashes.size;
+  summary.unique_pets = petHashes.size;
+  return summary;
+}
+
+function isLocalRequest(req) {
+  const address = req.socket.remoteAddress || "";
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+}
+
+function canReadAdminStats(req, url) {
+  if (adminToken && url.searchParams.get("token") === adminToken) return true;
+  return isLocalRequest(req);
+}
+
+function currentStats() {
+  return {
+    now: new Date().toISOString(),
+    runtime: {
+      users_total: users.size,
+      profiles_total: profiles.size,
+      friendships_total: friendships.size / 2,
+      invites_total: invites.size,
+      visits_total: visits.size,
+      active_visits: [...visits.values()].filter((visit) => visit.status === "active").length,
+      online_users: [...users.keys()].filter(isUserOnline).length
+    },
+    counters: Object.fromEntries(counters.entries()),
+    seen_since_start: {
+      users: seenUsers.size,
+      pets: seenPets.size
+    },
+    persisted: analyticsSummaryFromFile()
+  };
+}
 
 function sendJson(res, status, data) {
   const body = JSON.stringify(data, null, 2);
@@ -104,6 +212,7 @@ function areFriends(a, b) {
 
 function markUserOnline(userId) {
   runtimePresence.set(userId, Date.now());
+  seenUsers.add(userId);
 }
 
 function isUserOnline(userId) {
@@ -311,6 +420,13 @@ function finishVisit(visit, reason, actor = { type: "relay", user_id: "relay" },
   visit.events.push(event);
   visit.status = reason === "host_requested_return" ? "cancelled" : "completed";
   visit.ended_at = new Date().toISOString();
+  recordAnalytics("visit_finished", {
+    owner_user_id: visit.owner_user_id,
+    host_user_id: visit.host_user_id,
+    pet_id: visit.pet_id,
+    event_type: reason,
+    reason
+  });
 
   const receipt = createMemoryReceipt(visit, reason);
   emitTo(visit.host_user_id, "visit_ended", { visit_id: visit.visit_id, reason });
@@ -343,11 +459,17 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { ok: true, now: new Date().toISOString() });
   }
 
+  if (req.method === "GET" && url.pathname === "/api/admin/stats") {
+    if (!canReadAdminStats(req, url)) return sendJson(res, 403, { error: "Admin stats require local access or token" });
+    return sendJson(res, 200, currentStats());
+  }
+
   if (req.method === "GET" && url.pathname === "/api/bootstrap") {
     const userId = url.searchParams.get("user");
     if (!userId) return sendJson(res, 400, { error: "user is required" });
     const user = ensureUser(userId, userId);
     markUserOnline(userId);
+    recordAnalytics("bootstrap", { user_id: userId, pet_id: user.pet_id });
     const friends = friendSummaries(userId);
     return sendJson(res, 200, {
       user,
@@ -363,6 +485,7 @@ async function handleApi(req, res, url) {
     if (!userId) return sendJson(res, 400, { error: "user is required" });
     if (!users.has(userId)) return sendJson(res, 404, { error: "Unknown user" });
     markUserOnline(userId);
+    countMetric("events_poll");
     const mailbox = eventMailboxes.get(userId) || [];
     return sendJson(res, 200, {
       events: mailbox.filter((event) => event.id > after),
@@ -375,6 +498,7 @@ async function handleApi(req, res, url) {
     const { user_id, display_name } = body;
     if (!user_id) return sendJson(res, 400, { error: "user_id is required" });
     const user = ensureUser(user_id, display_name || user_id);
+    recordAnalytics("invite_created", { user_id });
     const token = `invite_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
     const invite = {
       token,
@@ -396,6 +520,7 @@ async function handleApi(req, res, url) {
     ensureUser(user_id, user_id);
     ensureUser(invite.user_id, invite.display_name);
     addFriendship(user_id, invite.user_id);
+    recordAnalytics("friend_added", { user_id, host_user_id: invite.user_id });
     emitTo(invite.user_id, "friend_added", {
       friend: friendSummaryFor(invite.user_id, user_id)
     });
@@ -420,6 +545,10 @@ async function handleApi(req, res, url) {
     const owner = ensureUser(nextProfile.owner_user_id, nextProfile.name);
     owner.display_name = nextProfile.name;
     owner.pet_id = nextProfile.pet_id;
+    recordAnalytics("profile_registered", {
+      user_id: nextProfile.owner_user_id,
+      pet_id: nextProfile.pet_id
+    });
     emitTo(nextProfile.owner_user_id, "profile_registered", safePetProfile(nextProfile));
     return sendJson(res, 200, { profile: safePetProfile(nextProfile) });
   }
@@ -453,6 +582,7 @@ async function handleApi(req, res, url) {
     };
 
     visits.set(visit.visit_id, visit);
+    recordAnalytics("visit_started", { owner_user_id, host_user_id, pet_id });
     emitTo(host_user_id, "visit_started", {
       visit,
       profile: safePetProfile(profile),
@@ -483,6 +613,13 @@ async function handleApi(req, res, url) {
       created_at: new Date().toISOString()
     };
     visit.events.push(event);
+    recordAnalytics("visit_event", {
+      owner_user_id: visit.owner_user_id,
+      host_user_id: visit.host_user_id,
+      actor_user_id: event.actor?.user_id,
+      pet_id: visit.pet_id,
+      event_type: event.type
+    });
     emitTo(visit.owner_user_id, "interaction_event", event);
     return sendJson(res, 201, { event });
   }
