@@ -60,6 +60,12 @@ Pet Y 现在处于真实好友 MVP 阶段。
 - 留言作为 `VisitEvent` 的 `message` 事件进入 Relay，暂时不要求宠物回复。
 - 宠物间互动使用 `pet_to_pet.greeting`、`pet_to_pet.sit_together`、`pet_to_pet.walk_together` 这些通用事件，不绑定某一种动物动作。
 
+### 统计与运营观察
+
+- Relay 记录匿名化产品统计事件，用来观察有多少人启动 Runtime、注册宠物、创建邀请、添加好友、发起串门和触发互动。
+- 统计日志默认写入 Relay 服务器本地 `data/analytics.jsonl`，不记录留言正文、邀请口令、宠物图片或用户本地文件。
+- 管理统计接口 `/api/admin/stats` 默认只允许服务器本机访问；如需远程访问，应配置 `PET_Y_ADMIN_TOKEN`。
+
 ### Skill 与公开分享
 
 - `pet-y-skill/SKILL.md` 已说明 Pet Y 不是固定宠物，而是生成宠物生命包的流程。

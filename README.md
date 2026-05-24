@@ -229,6 +229,20 @@ The desktop Runtime persists each pet's local state on the owner's machine. Life
 
 Relay data can disappear in this MVP, but the owner's local pet memories survive Runtime restarts.
 
+### Relay Stats
+
+The Relay writes privacy-friendly analytics events to `data/analytics.jsonl` by default. These events count product usage such as Runtime bootstrap, profile registration, invite creation, friend binding, visits, and interaction event types.
+
+The analytics log does not store invite tokens, message text, pet image assets, or local user files. User and pet identifiers are hashed before being written.
+
+Admin stats are available from the Relay host:
+
+```bash
+curl http://127.0.0.1:8787/api/admin/stats
+```
+
+Public access is denied unless `PET_Y_ADMIN_TOKEN` is configured and provided as `?token=...`.
+
 ## Pet Life Packs
 
 Runtime loads sample pets from:
