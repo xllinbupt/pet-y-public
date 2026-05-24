@@ -4,6 +4,22 @@ Pet Y is an agent-generated social desktop pet prototype.
 
 Instead of shipping one fixed pet, Pet Y provides a workflow where an AI agent helps a user create a local desktop pet, run it on macOS, and let it visit friends through a lightweight Relay.
 
+## 中文简介
+
+Pet Y 不是一只固定的桌面宠物，而是一套让 Agent 帮用户“创造宠物生命”的流程。
+
+当前原型已经能跑通一个真实社交闭环：
+
+- 用户通过 Pet Y Skill 访谈生成自己的宠物生命包。
+- 宠物作为原生 macOS 透明窗口生活在桌面上。
+- 宠物可以被摸摸、拖拽、睡觉、丢球互动，并把本地经历写进生活日志。
+- 用户可以邀请朋友，让朋友用自己的 Agent 创建另一只宠物。
+- 好友之间可以互相串门：宠物离家后会在主人桌面留下牌子，并出现在好友桌面。
+- 宿主可以和来访宠物互动、留言或送它回家；这些互动会通过 Relay 回到宠物主人本地，成为宠物的记忆线索。
+- 来访宠物的互动菜单会按能力过滤，只展示宿主 Runtime 和宠物名片都支持的动作。
+
+当前项目仍是 MVP：Runtime 只支持 macOS，Relay 仍是轻量内存服务，公开分发还没有签名公证的 `.app` 安装包。
+
 Public repository:
 
 ```text
@@ -119,6 +135,7 @@ public/                 Browser protocol playground
 ## Documents
 
 - [Product Vision](./PRODUCT_VISION.md)
+- [Project Progress](./PROJECT_PROGRESS.md)
 - [Pet Protocol Draft](./PET_PROTOCOL_DRAFT.md)
 - [Pet Life Pack](./PET_LIFE_PACK.md)
 - [Pet Skill Flow](./PET_SKILL_FLOW.md)
