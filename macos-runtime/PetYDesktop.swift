@@ -79,14 +79,6 @@ struct FriendAddedPayload: Codable {
     let friend: FriendStatus?
 }
 
-struct PetMessage: Codable {
-    let message_id: String
-    let pet_id: String
-    let sender_user_id: String
-    let text: String
-    let created_at: String
-}
-
 struct VisitSession: Codable {
     let visit_id: String
     let pet_id: String
@@ -1481,11 +1473,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 log("收到远端互动事件：\(event.type)")
             }
-        case "pet_message":
-            if let message = try? decoder.decode(PetMessage.self, from: data) {
-                remember("有人给 \(localPet.name) 留言：\(message.text)")
-                log("收到留言：\(message.text)")
-            }
         case "visit_ended":
             removeVisitor()
             log("小客人已经回家了。")
@@ -1643,10 +1630,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             PetAction(title: "摸摸") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.petLocalPet()
-            },
-            PetAction(title: "留言") { [weak self] in
-                self?.closeInteractionMenu()
-                self?.leaveMessageForLocalPet()
             }
         ]
         if animationResolver.hasFetchBallAction() {
@@ -1755,31 +1738,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         remember("\(localPet.name) 被你摸了摸。")
         scheduleLocalSleep()
         scheduleLocalRoam()
-    }
-
-    private func leaveMessageForLocalPet() {
-        promptForPetMessage(targetName: localPet.name) { [weak self] text in
-            guard let self else { return }
-            let body = PetMessageRequest(
-                sender_user_id: self.userId,
-                owner_user_id: self.userId,
-                text: text,
-                visibility: "owner_can_see"
-            )
-            self.relay.post("api/pets/\(self.localPet.pet_id)/messages", body: body) { [weak self] (result: Result<PetMessageResponse, Error>) in
-                DispatchQueue.main.async {
-                    switch result {
-                    case .success:
-                        self?.panel.setStatus("留言已发送")
-                        self?.remember("你给 \(self?.localPet.name ?? "宠物") 留言：\(text)")
-                        self?.log("留言已发送。")
-                    case .failure(let error):
-                        self?.panel.setStatus("留言失败")
-                        self?.log("留言上传失败：\(error.localizedDescription)")
-                    }
-                }
-            }
-        }
     }
 
     private func putLocalPetToSleep() {
@@ -2025,8 +1983,6 @@ struct InteractionEvent: Codable {
     let type: String
     let data: [String: String]?
 }
-struct PetMessageResponse: Codable { let message: PetMessage }
-
 struct VisitRequest: Codable {
     let pet_id: String
     let owner_user_id: String
@@ -2038,13 +1994,6 @@ struct InteractionRequest: Codable {
     let type: String
     let data: [String: String]
     let actor: [String: String]
-}
-
-struct PetMessageRequest: Codable {
-    let sender_user_id: String
-    let owner_user_id: String
-    let text: String
-    let visibility: String
 }
 
 struct EndVisitRequest: Codable {

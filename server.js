@@ -54,7 +54,6 @@ const users = new Map([
 const friendships = new Set(["alice:bob", "bob:alice"]);
 const profiles = new Map();
 const visits = new Map();
-const petMessages = new Map();
 const invites = new Map();
 const eventStreams = new Map();
 const eventMailboxes = new Map();
@@ -222,13 +221,6 @@ function safePetProfile(profile) {
 
 function cleanMessageText(text) {
   return String(text || "").trim().slice(0, 500);
-}
-
-function storePetMessage(message) {
-  if (!petMessages.has(message.pet_id)) petMessages.set(message.pet_id, []);
-  const messages = petMessages.get(message.pet_id);
-  messages.push(message);
-  if (messages.length > 100) messages.shift();
 }
 
 function createMemoryReceipt(visit, reason = "departed") {
@@ -477,30 +469,6 @@ async function handleApi(req, res, url) {
     visit.events.push(event);
     emitTo(visit.owner_user_id, "interaction_event", event);
     return sendJson(res, 201, { event });
-  }
-
-  const messageMatch = url.pathname.match(/^\/api\/pets\/([^/]+)\/messages$/);
-  if (req.method === "POST" && messageMatch) {
-    const petId = messageMatch[1];
-    const profile = profiles.get(petId);
-    const body = await readBody(req);
-    const text = cleanMessageText(body.text);
-    if (!text) return sendJson(res, 400, { error: "message text is required" });
-
-    const message = {
-      message_id: `message_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      pet_id: petId,
-      owner_user_id: profile?.owner_user_id || body.owner_user_id || body.sender_user_id || "",
-      sender_user_id: body.sender_user_id || "",
-      text,
-      visibility: body.visibility || "owner_can_see",
-      created_at: new Date().toISOString()
-    };
-    storePetMessage(message);
-    if (message.owner_user_id && message.owner_user_id !== message.sender_user_id) {
-      emitTo(message.owner_user_id, "pet_message", message);
-    }
-    return sendJson(res, 201, { message });
   }
 
   const endMatch = url.pathname.match(/^\/api\/visits\/([^/]+)\/end$/);
