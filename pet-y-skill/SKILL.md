@@ -107,6 +107,7 @@ If macOS blocks the Runtime as unsafe, do not teach the user to bypass system se
 Every generated `pet-life.json` should include:
 
 - `profile`: pet identity and Relay-facing profile.
+- `profile.interaction_capabilities`: interactions the pet accepts when visiting another desktop.
 - `voice`: short bubble lines and memory tone.
 - `animation_states`: sprite sheet specs for Runtime.
 - `asset_prompts`: prompts for producing or improving sprite sheets.
@@ -123,6 +124,8 @@ For a generated pet, include at least:
 - one signature action: usually 4-6 frames, 64x64 per frame.
 
 Prefer generic action names for new pets. Dog-specific states such as `run`, `sit`, and `carry_ball` are supported as legacy/example fallbacks, not as the default shape for every pet.
+
+For a generated pet, declare visitor interaction capabilities conservatively. Default to `petting`, `message`, and `return_home`; add capabilities such as `gift.simple` only when the pet's concept and behavior support them.
 
 Use sprite sheet PNG. Plain PNG is not animated by itself; Runtime animates by stepping through frames.
 

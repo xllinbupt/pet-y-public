@@ -44,6 +44,12 @@ const lifePack = {
       "react_to_click",
       "react_to_drag",
       "receive_gift"
+    ],
+    interaction_capabilities: [
+      "petting",
+      "message",
+      "return_home",
+      "gift.simple"
     ]
   },
   voice: {

@@ -11,6 +11,7 @@ struct PetProfile: Codable {
     let preview: String
     let personality_card: String
     let projection_capabilities: [String]
+    let interaction_capabilities: [String]?
 }
 
 extension PetProfile {
@@ -25,7 +26,8 @@ extension PetProfile {
             style: style,
             preview: preview,
             personality_card: personality_card,
-            projection_capabilities: projection_capabilities
+            projection_capabilities: projection_capabilities,
+            interaction_capabilities: interaction_capabilities
         )
     }
 }
@@ -147,6 +149,7 @@ struct PetProfileRegistration: Codable {
     let preview: String
     let personality_card: String
     let projection_capabilities: [String]
+    let interaction_capabilities: [String]?
     let animation_states: [String: AnimationState]?
     let asset_blobs: [String: String]?
 }
@@ -295,7 +298,8 @@ enum PetLifePackLoader {
                 style: "sticker",
                 preview: "#ee7b6c",
                 personality_card: "外向、爱凑热闹，会把来访朋友带到屏幕边缘玩。",
-                projection_capabilities: ["idle", "walk", "sleep", "react_to_click", "react_to_drag", "receive_gift"]
+                projection_capabilities: ["idle", "walk", "sleep", "react_to_click", "react_to_drag", "receive_gift"],
+                interaction_capabilities: ["petting", "message", "return_home", "gift.simple"]
             )
         }
         return PetProfile(
@@ -307,7 +311,8 @@ enum PetLifePackLoader {
             style: "pixel",
             preview: "#6bc6a8",
             personality_card: "慢热但好奇，喜欢被轻轻拖到新的观察点。",
-            projection_capabilities: ["idle", "walk", "sleep", "react_to_click", "react_to_drag", "receive_gift"]
+            projection_capabilities: ["idle", "walk", "sleep", "react_to_click", "react_to_drag", "receive_gift"],
+            interaction_capabilities: ["petting", "message", "return_home", "gift.simple"]
         )
     }
 }
@@ -1254,6 +1259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preview: localPet.preview,
             personality_card: localPet.personality_card,
             projection_capabilities: localPet.projection_capabilities,
+            interaction_capabilities: localPet.interaction_capabilities,
             animation_states: lifePack.pack.animation_states,
             asset_blobs: projectionAssetBlobs()
         )
@@ -1701,25 +1707,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showVisitorInteractionMenu() {
         guard let visitorWindow else { return }
         closeInteractionMenu()
-        let actions = [
-            PetAction(title: "摸摸") { [weak self] in
+        guard let visitorView = visitorWindow.contentView as? PetView else { return }
+        let capabilities = visitorInteractionCapabilities(for: visitorView.profile)
+        var actions: [PetAction] = []
+        if capabilities.contains("petting") {
+            actions.append(PetAction(title: "摸摸") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.petVisitor()
-            },
-            PetAction(title: "留言") { [weak self] in
+            })
+        }
+        if capabilities.contains("message") {
+            actions.append(PetAction(title: "留言") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.leaveMessageForVisitor()
-            },
-            PetAction(title: "投喂") { [weak self] in
+            })
+        }
+        if capabilities.contains("gift.simple") {
+            actions.append(PetAction(title: "投喂") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.feedVisitor()
-            },
-            PetAction(title: "送回家") { [weak self] in
+            })
+        }
+        if capabilities.contains("return_home") {
+            actions.append(PetAction(title: "送回家") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.returnVisitor()
-            }
-        ]
+            })
+        }
+        if actions.isEmpty {
+            visitorView.say("我还不知道怎么和你互动。")
+            return
+        }
         interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: visitorWindow.frame, actionCount: actions.count), actions: actions)
+    }
+
+    private func visitorInteractionCapabilities(for profile: PetProfile) -> Set<String> {
+        let runtimeSupported: Set<String> = ["petting", "message", "return_home", "gift.simple"]
+        let petSupported = Set(profile.interaction_capabilities ?? ["petting", "message", "return_home"])
+        return runtimeSupported.intersection(petSupported)
     }
 
     private func menuOrigin(for petFrame: NSRect, actionCount: Int) -> CGPoint {
