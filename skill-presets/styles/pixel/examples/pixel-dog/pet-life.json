@@ -41,7 +41,8 @@
       "frame_height": 64,
       "frames": 4,
       "fps": 6,
-      "loop": true
+      "loop": true,
+      "default_facing": "none"
     },
     "run": {
       "description": "小狗小跑，耳朵和尾巴上下动。",
@@ -51,7 +52,8 @@
       "frame_height": 64,
       "frames": 6,
       "fps": 10,
-      "loop": true
+      "loop": true,
+      "default_facing": "right"
     },
     "sit": {
       "description": "坐着看向用户，尾巴轻轻动。",
@@ -61,7 +63,8 @@
       "frame_height": 64,
       "frames": 3,
       "fps": 4,
-      "loop": true
+      "loop": true,
+      "default_facing": "none"
     },
     "sleep": {
       "description": "趴着睡觉，身体有呼吸起伏。",
@@ -71,7 +74,8 @@
       "frame_height": 64,
       "frames": 3,
       "fps": 2,
-      "loop": true
+      "loop": true,
+      "default_facing": "none"
     },
     "carry_ball": {
       "description": "叼着红色皮球小跑过来。",
@@ -81,7 +85,8 @@
       "frame_height": 64,
       "frames": 6,
       "fps": 8,
-      "loop": false
+      "loop": false,
+      "default_facing": "right"
     }
   },
   "asset_prompts": {

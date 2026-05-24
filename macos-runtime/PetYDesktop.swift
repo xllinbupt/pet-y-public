@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.22"
+let PetYRuntimeVersion = "v0.1.23"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -133,6 +133,7 @@ struct AnimationState: Codable {
     let frames: Int
     let fps: Int
     let loop: Bool
+    let default_facing: String?
 }
 
 struct PetLifePack: Codable {
@@ -931,7 +932,7 @@ final class PetView: NSView {
             width: spriteSize,
             height: spriteSize
         )
-        if facingLeft {
+        if shouldMirrorSprite(animationState) {
             NSGraphicsContext.saveGraphicsState()
             let transform = NSAffineTransform()
             transform.translateX(by: target.midX, yBy: 0)
@@ -944,6 +945,17 @@ final class PetView: NSView {
             animationImage.draw(in: target, from: source, operation: .sourceOver, fraction: 1.0, respectFlipped: false, hints: [.interpolation: NSImageInterpolation.none])
         }
         return true
+    }
+
+    private func shouldMirrorSprite(_ animationState: AnimationState) -> Bool {
+        switch animationState.default_facing?.lowercased() ?? "right" {
+        case "none":
+            return false
+        case "left":
+            return !facingLeft
+        default:
+            return facingLeft
+        }
     }
 
     private func drawEar(_ rect: NSRect, rotation: CGFloat, color: NSColor) {
