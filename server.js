@@ -238,6 +238,9 @@ function createMemoryReceipt(visit, reason = "departed") {
   if (reason === "host_runtime_offline") {
     petVoice = `我刚刚在 ${host?.display_name || "朋友"} 那里玩，但那边突然安静下来了，我就先回家了。`;
   }
+  if (reason === "owner_requested_return") {
+    petVoice = `我听见你喊我，就从 ${host?.display_name || "朋友"} 那里跑回来了。`;
+  }
 
   return {
     receipt_id: `memory_${Date.now()}`,

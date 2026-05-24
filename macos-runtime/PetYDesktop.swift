@@ -915,9 +915,11 @@ final class ControlPanel: NSObject {
     var status = "准备中"
     var friends: [FriendStatus] = []
     var hasVisitor = false
+    var hasAwayPet = false
     var recentLogs: [String] = []
     var onSendVisit: ((String) -> Void)?
     var onReturn: (() -> Void)?
+    var onRecallPet: (() -> Void)?
     var onShareInvite: (() -> Void)?
     var onAcceptInvite: (() -> Void)?
 
@@ -940,6 +942,11 @@ final class ControlPanel: NSObject {
 
     func setHasVisitor(_ value: Bool) {
         hasVisitor = value
+        rebuildMenu()
+    }
+
+    func setHasAwayPet(_ value: Bool) {
+        hasAwayPet = value
         rebuildMenu()
     }
 
@@ -981,8 +988,13 @@ final class ControlPanel: NSObject {
                 friendsMenu.addItem(item)
             }
         }
-        if hasVisitor {
+        if hasAwayPet || hasVisitor {
             friendsMenu.addItem(.separator())
+        }
+        if hasAwayPet {
+            friendsMenu.addItem(actionItem(title: "喊我的宠物回来", action: #selector(recallPetTapped)))
+        }
+        if hasVisitor {
             friendsMenu.addItem(actionItem(title: "送小客人回家", action: #selector(returnTapped)))
         }
         friendsItem.submenu = friendsMenu
@@ -1014,6 +1026,7 @@ final class ControlPanel: NSObject {
 
     @objc private func sendTapped(_ sender: NSMenuItem) { onSendVisit?(sender.representedObject as? String ?? "") }
     @objc private func returnTapped() { onReturn?() }
+    @objc private func recallPetTapped() { onRecallPet?() }
     @objc private func shareInviteTapped() { onShareInvite?() }
     @objc private func acceptInviteTapped() { onAcceptInvite?() }
     @objc private func quitTapped() { NSApp.terminate(nil) }
@@ -1035,6 +1048,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var ballWindow: BallWindow?
     var interactionMenuWindow: InteractionMenuWindow?
     var visitorVisit: VisitSession?
+    var outgoingVisit: VisitSession?
     var friends: [FriendStatus] = []
     var lastEventId = 0
     var pollTimer: Timer?
@@ -1067,6 +1081,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel = ControlPanel()
         panel.onSendVisit = { [weak self] friend in self?.sendVisit(to: friend) }
         panel.onReturn = { [weak self] in self?.returnVisitor() }
+        panel.onRecallPet = { [weak self] in self?.recallLocalPet() }
         panel.onShareInvite = { [weak self] in self?.shareInvite() }
         panel.onAcceptInvite = { [weak self] in self?.promptForInvite() }
 
@@ -1120,12 +1135,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         awaySignWindow?.close()
         let sign = AwaySignView(message: "我去 \(friend) 那儿")
         awaySignWindow = AwaySignWindow(view: sign, origin: origin)
+        panel?.setHasAwayPet(true)
     }
 
     private func restoreLocalPet() {
         let origin = awaySignWindow?.frame.origin
         awaySignWindow?.close()
         awaySignWindow = nil
+        outgoingVisit = nil
+        panel?.setHasAwayPet(false)
         guard localWindow == nil else { return }
 
         let view = PetView(
@@ -1325,6 +1343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let response):
+                    self?.outgoingVisit = response.visit
                     self?.panel.setStatus("\(self?.localPet.name ?? "宠物") 已出门")
                     self?.sayLocal("我出门啦。")
                     self?.showAwaySign(to: friendName)
@@ -1392,6 +1411,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "visit_started":
             if let payload = try? decoder.decode(VisitStartedPayload.self, from: data) {
                 showVisitor(payload)
+            }
+        case "visit_status":
+            if let visit = try? decoder.decode(VisitSession.self, from: data),
+               visit.owner_user_id == userId,
+               visit.status == "active" {
+                outgoingVisit = visit
+                panel.setHasAwayPet(true)
             }
         case "interaction_event":
             log("收到远端互动事件：\(event.type)")
@@ -1512,6 +1538,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func recallLocalPet() {
+        guard let visit = outgoingVisit else {
+            sayLocal("我已经在家啦。")
+            log("当前没有出门中的宠物。")
+            panel.setHasAwayPet(false)
+            return
+        }
+        let body = EndVisitRequest(reason: "owner_requested_return", actor: ["type": "owner_user", "user_id": userId])
+        relay.post("api/visits/\(visit.visit_id)/end", body: body) { [weak self] (result: Result<EndVisitResponse, Error>) in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    self?.panel.setStatus("正在回家")
+                    self?.log("已喊宠物回家。")
+                case .failure(let error):
+                    self?.log("喊宠物回家失败：\(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     private func removeVisitor() {
         closeInteractionMenu()
         visitorWindow?.close()
@@ -1573,6 +1620,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             actions.append(PetAction(title: "送回家") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.returnVisitor()
+            })
+        }
+        if outgoingVisit != nil {
+            actions.append(PetAction(title: "喊回来") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.recallLocalPet()
             })
         }
         let onlineFriends = friends.filter { $0.online }
