@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.18"
+let PetYRuntimeVersion = "v0.1.19"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -1329,9 +1329,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         公开说明在这里：
         https://github.com/xllinbupt/pet-y-public
 
-        你可以把下面这段话发给 Agent。优先用 Codex，因为它可以直接帮你生成宠物图像：
+        你可以把下面这段话发给你的 Agent。优先用 Codex，因为它可以直接帮你生成宠物图像：
 
-        请根据 https://github.com/xllinbupt/pet-y-public 的说明，先安装和准备 Pet Y 项目，并下载预编译的 Pet Y Runtime。这个过程可能需要一点时间，不需要让我处理 Xcode、Swift 或 macOS SDK 编译问题。
+        请根据 https://github.com/xllinbupt/pet-y-public 的说明，先安装和准备 Pet Y 项目，并从公开 Release 下载最新的预编译 Pet Y Runtime。这个过程可能需要一点时间，不需要让我处理 Xcode、Swift 或 macOS SDK 编译问题。启动后菜单顶部应该能看到 Runtime 版本号。
 
         然后请访谈我，帮我创建一只属于我自己的桌面宠物。请问我宠物的名字、风格、外形、性格、动作、行为和它喜欢怎样陪伴我，不要直接运行邀请人的小狗。
 
@@ -1342,7 +1342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         \(token)
 
-        绑定完成后请重启一次 Pet Y Runtime。我的朋友那边会收到好友添加成功的提醒，然后我们就可以互相串门了。
+        绑定完成后请重启一次 Pet Y Runtime。邀请我的人会收到好友添加成功提醒，然后我们就可以互相串门了。
         """
     }
 
