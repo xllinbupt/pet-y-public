@@ -914,6 +914,7 @@ final class ControlPanel: NSObject {
     var title = "Pet Y Runtime"
     var status = "准备中"
     var friends: [FriendStatus] = []
+    var hasVisitor = false
     var recentLogs: [String] = []
     var onSendVisit: ((String) -> Void)?
     var onReturn: (() -> Void)?
@@ -934,6 +935,11 @@ final class ControlPanel: NSObject {
 
     func setStatus(_ text: String) {
         status = text
+        rebuildMenu()
+    }
+
+    func setHasVisitor(_ value: Bool) {
+        hasVisitor = value
         rebuildMenu()
     }
 
@@ -975,8 +981,10 @@ final class ControlPanel: NSObject {
                 friendsMenu.addItem(item)
             }
         }
-        friendsMenu.addItem(.separator())
-        friendsMenu.addItem(actionItem(title: "请回来访宠物", action: #selector(returnTapped)))
+        if hasVisitor {
+            friendsMenu.addItem(.separator())
+            friendsMenu.addItem(actionItem(title: "送小客人回家", action: #selector(returnTapped)))
+        }
         friendsItem.submenu = friendsMenu
         menu.addItem(friendsItem)
         menu.addItem(.separator())
@@ -1389,7 +1397,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log("收到远端互动事件：\(event.type)")
         case "visit_ended":
             removeVisitor()
-            log("来访宠物已经回家。")
+            log("小客人已经回家了。")
         case "memory_receipt":
             if let receipt = try? decoder.decode(MemoryReceipt.self, from: data) {
                 panel.setStatus("\(localPet.name) 回家了")
@@ -1407,6 +1415,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showVisitor(_ payload: VisitStartedPayload) {
         removeVisitor()
         visitorVisit = payload.visit
+        panel.setHasVisitor(true)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let view = PetView(
             profile: payload.profile,
@@ -1457,7 +1466,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func recordVisitEvent(type: String, data: [String: String]) {
         guard let visit = visitorVisit else {
-            log("当前没有来访宠物。")
+            log("现在没有来串门的小客人。")
             return
         }
         let body = InteractionRequest(
@@ -1477,7 +1486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func feedVisitor() {
         guard visitorVisit != nil else {
-            log("当前没有来访宠物可以投喂。")
+            log("现在没有来串门的小客人。")
             return
         }
         (visitorWindow?.contentView as? PetView)?.say("我会把草莓带回去。")
@@ -1486,7 +1495,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func returnVisitor() {
         guard let visit = visitorVisit else {
-            log("当前没有来访宠物可以请回。")
+            log("现在没有需要送回家的小客人。")
             return
         }
         let body = EndVisitRequest(reason: "host_requested_return", actor: ["type": "host_user", "user_id": userId])
@@ -1495,9 +1504,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch result {
                 case .success:
                     self?.removeVisitor()
-                    self?.log("已请回来访宠物。")
+                    self?.log("已送小客人回家。")
                 case .failure(let error):
-                    self?.log("请回失败：\(error.localizedDescription)")
+                    self?.log("送小客人回家失败：\(error.localizedDescription)")
                 }
             }
         }
@@ -1508,6 +1517,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         visitorWindow?.close()
         visitorWindow = nil
         visitorVisit = nil
+        panel?.setHasVisitor(false)
     }
 
     private func sayLocal(_ text: String) {
@@ -1560,7 +1570,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         ]
         if visitorVisit != nil {
-            actions.append(PetAction(title: "请回") { [weak self] in
+            actions.append(PetAction(title: "送回家") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.returnVisitor()
             })
@@ -1595,7 +1605,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.closeInteractionMenu()
                 self?.feedVisitor()
             },
-            PetAction(title: "请回") { [weak self] in
+            PetAction(title: "送回家") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.returnVisitor()
             }
