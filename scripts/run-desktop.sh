@@ -5,6 +5,9 @@ cd "$(dirname "$0")/.."
 
 relay="${PET_Y_RELAY:-http://127.0.0.1:8787}"
 args=(--relay "$relay")
+if [[ -n "${PET_Y_RELAY_SECRET:-}" ]]; then
+  args+=(--relay-secret "$PET_Y_RELAY_SECRET")
+fi
 app_support="${PET_Y_APP_SUPPORT:-$HOME/Library/Application Support/PetY}"
 
 if [[ -n "${PET_Y_USER:-}" ]]; then

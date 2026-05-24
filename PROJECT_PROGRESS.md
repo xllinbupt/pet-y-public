@@ -65,6 +65,7 @@ Pet Y 现在处于真实好友 MVP 阶段。
 - Relay 记录匿名化产品统计事件，用来观察有多少人启动 Runtime、注册宠物、创建邀请、添加好友、发起串门和触发互动。
 - 统计日志默认写入 Relay 服务器本地 `data/analytics.jsonl`，不记录留言正文、邀请口令、宠物图片或用户本地文件。
 - 管理统计接口 `/api/admin/stats` 默认只允许服务器本机访问；如需远程访问，应配置 `PET_Y_ADMIN_TOKEN`。
+- Relay 支持 `PET_Y_RELAY_SECRET` 访问口令；开启后，除健康检查和管理统计外，API 调用都需要知道口令。
 
 ### Skill 与公开分享
 
@@ -72,7 +73,7 @@ Pet Y 现在处于真实好友 MVP 阶段。
 - Skill 要求 Agent 先访谈用户，再生成宠物形象、动作状态、互动能力和 Life Pack。
 - Skill 明确要求不要用代码画正式宠物素材，正式素材应由图像模型生成或人工整理。
 - 公开仓库 `xllinbupt/pet-y-public` 已建立。
-- 公开 Runtime Release 已发布到 `v0.1.20`。
+- 公开 Runtime Release 已发布到 `v0.1.21`。
 - 好友 Quickstart 已说明：朋友应创建自己的宠物，不应直接运行邀请人的小狗。
 
 ## 3. 当前限制
