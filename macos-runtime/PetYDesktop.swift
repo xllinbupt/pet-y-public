@@ -299,7 +299,7 @@ enum PetLifePackLoader {
                 preview: "#ee7b6c",
                 personality_card: "外向、爱凑热闹，会把来访朋友带到屏幕边缘玩。",
                 projection_capabilities: ["idle", "walk", "sleep", "react_to_click", "react_to_drag", "receive_gift"],
-                interaction_capabilities: ["petting", "message", "return_home", "gift.simple"]
+                interaction_capabilities: ["petting", "message", "return_home", "gift.simple", "pet_to_pet.walk_together"]
             )
         }
         return PetProfile(
@@ -312,7 +312,7 @@ enum PetLifePackLoader {
             preview: "#6bc6a8",
             personality_card: "慢热但好奇，喜欢被轻轻拖到新的观察点。",
             projection_capabilities: ["idle", "walk", "sleep", "react_to_click", "react_to_drag", "receive_gift"],
-            interaction_capabilities: ["petting", "message", "return_home", "gift.simple"]
+            interaction_capabilities: ["petting", "message", "return_home", "gift.simple", "pet_to_pet.walk_together"]
         )
     }
 }
@@ -1728,6 +1728,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.feedVisitor()
             })
         }
+        if capabilities.contains("pet_to_pet.walk_together"), localWindow != nil {
+            actions.append(PetAction(title: "一起玩") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.playTogetherWithVisitor()
+            })
+        }
         if capabilities.contains("return_home") {
             actions.append(PetAction(title: "送回家") { [weak self] in
                 self?.closeInteractionMenu()
@@ -1742,9 +1748,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func visitorInteractionCapabilities(for profile: PetProfile) -> Set<String> {
-        let runtimeSupported: Set<String> = ["petting", "message", "return_home", "gift.simple"]
+        let runtimeSupported: Set<String> = ["petting", "message", "return_home", "gift.simple", "pet_to_pet.walk_together"]
         let petSupported = Set(profile.interaction_capabilities ?? ["petting", "message", "return_home"])
-        return runtimeSupported.intersection(petSupported)
+        let localSupported = Set(localPet.interaction_capabilities ?? ["petting", "message", "return_home"])
+        var capabilities = runtimeSupported.intersection(petSupported)
+        if !localSupported.contains("pet_to_pet.walk_together") {
+            capabilities.remove("pet_to_pet.walk_together")
+        }
+        return capabilities
     }
 
     private func menuOrigin(for petFrame: NSRect, actionCount: Int) -> CGPoint {
@@ -1837,6 +1848,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         onSubmit(String(text.prefix(500)))
+    }
+
+    private func playTogetherWithVisitor() {
+        guard let localWindow, let visitorWindow else {
+            log("现在没有来串门的小客人。")
+            return
+        }
+        localSleepTimer?.invalidate()
+        localRoamTimer?.invalidate()
+        localAnimationTimer?.invalidate()
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let localStart = localWindow.frame.origin
+        let visitorStart = visitorWindow.frame.origin
+        let localTarget = CGPoint(
+            x: localStart.x < screen.midX ? screen.maxX - 260 : screen.minX + 120,
+            y: min(max(localStart.y + 120, screen.minY + 90), screen.maxY - 180)
+        )
+        let visitorTarget = CGPoint(x: localTarget.x + 92, y: localTarget.y + 6)
+        let duration = localMoveDuration(from: localStart, to: localTarget, speed: 240, minimum: 2.2, maximum: 4.8)
+
+        sayLocal("我们一起去那边玩。")
+        (visitorWindow.contentView as? PetView)?.say("一起跑一下。")
+        playLocal(.move)
+        playVisitorMove()
+        recordVisitEvent(
+            type: "pet_to_pet.walk_together",
+            data: [
+                "local_pet_id": localPet.pet_id,
+                "visitor_pet_id": visitorVisit?.pet_id ?? "",
+                "from_x": "\(Int(visitorStart.x))",
+                "from_y": "\(Int(visitorStart.y))",
+                "to_x": "\(Int(visitorTarget.x))",
+                "to_y": "\(Int(visitorTarget.y))"
+            ]
+        )
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            localWindow.animator().setFrameOrigin(localTarget)
+            visitorWindow.animator().setFrameOrigin(visitorTarget)
+        } completionHandler: { [weak self] in
+            self?.playLocal(.rest, returnToIdleAfter: 1.4)
+            (visitorWindow.contentView as? PetView)?.play("idle")
+            self?.remember("\(self?.localPet.name ?? "宠物") 和来访的小客人一起在桌面上跑了一段。")
+            self?.scheduleLocalRoam()
+            self?.scheduleLocalSleep()
+        }
+    }
+
+    private func playVisitorMove() {
+        guard let visitorView = visitorWindow?.contentView as? PetView else { return }
+        for state in ["move", "run", "walk", "float", "drift", "hop", "idle"] {
+            if visitorView.animationStates[state] != nil {
+                visitorView.play(state)
+                return
+            }
+        }
     }
 
     private func playLocal(_ stateName: String, returnToIdleAfter delay: TimeInterval? = nil) {

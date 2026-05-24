@@ -56,7 +56,8 @@ life-packs/<pet-id>/pet-life.json
 	    "petting",
 	    "message",
 	    "return_home",
-	    "gift.simple"
+	    "gift.simple",
+	    "pet_to_pet.walk_together"
 	  ]
 	},
   "voice": {
@@ -190,7 +191,7 @@ life-packs/<pet-id>/pet-life.json
 - 动画推荐使用 sprite sheet PNG，而不是 APNG/GIF。普通 PNG 不会自己动，但可以承载多帧素材，由 Runtime 按帧播放。
 - 复杂互动可以由多个动作语义组成。比如捡球不是单个 `carry_ball`，而是 `throw_ball_far -> move_to_target_scale_down -> pick_up_ball -> return_with_ball_scale_up -> rest`。这只是小狗案例，不是所有宠物的默认动作。
 - Runtime 可以在 sprite sheet 之外叠加空间效果，例如位置移动、缩放、气泡和道具窗口；生命包负责描述意图，Runtime 负责安全执行。
-- `interaction_capabilities` 用来声明来访时可接受的互动。Runtime 应只展示双方都支持的互动；旧生命包未声明时默认只支持 `petting`、`message`、`return_home`。
+- `interaction_capabilities` 用来声明来访时可接受的互动。Runtime 应只展示双方都支持的互动；旧生命包未声明时默认只支持 `petting`、`message`、`return_home`。`pet_to_pet.walk_together` 是第一版宠物和宠物之间的通用互动，表示两只宠物一起从桌面一处跑到另一处。
 
 ## 5. Runtime 动作意图
 
