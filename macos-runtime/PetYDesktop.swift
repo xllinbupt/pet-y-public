@@ -1733,8 +1733,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func petLocalPet() {
+        animatePettingReaction(window: localWindow)
         playLocal(.rest, returnToIdleAfter: 2.5)
-        sayLocal("我在桌面上。")
+        sayLocal("蹭了蹭你的手。")
         remember("\(localPet.name) 被你摸了摸。")
         scheduleLocalSleep()
         scheduleLocalRoam()
@@ -1756,8 +1757,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func petVisitor() {
+        animatePettingReaction(window: visitorWindow)
         (visitorWindow?.contentView as? PetView)?.say("谢谢你理我。")
         recordVisitEvent(type: "clicked", data: ["message": "host petted visitor pet"])
+    }
+
+    private func animatePettingReaction(window: PetWindow?) {
+        guard let window else { return }
+        let start = window.frame.origin
+        let bump = CGPoint(x: start.x, y: start.y + 10)
+        let view = window.contentView as? PetView
+        view?.animateRenderScale(to: 1.08, duration: 0.1)
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.1
+            window.animator().setFrameOrigin(bump)
+        } completionHandler: {
+            view?.animateRenderScale(to: 1.0, duration: 0.18)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.16
+                window.animator().setFrameOrigin(start)
+            }
+        }
     }
 
     private func leaveMessageForVisitor() {
