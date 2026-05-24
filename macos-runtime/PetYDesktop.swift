@@ -1295,13 +1295,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func promptForInvite() {
         let alert = NSAlert()
-        alert.messageText = "输入好友邀请码"
-        alert.informativeText = "把对方复制给你的邀请码贴到这里。"
+        alert.icon = NSImage(systemSymbolName: "person.crop.circle.badge.plus", accessibilityDescription: "添加好友")
+        alert.messageText = "添加好友"
+        alert.informativeText = "粘贴朋友发给你的邀请码。"
         alert.addButton(withTitle: "添加")
         alert.addButton(withTitle: "取消")
 
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        input.stringValue = NSPasteboard.general.string(forType: .string) ?? ""
+        input.placeholderString = "邀请码"
         alert.accessoryView = input
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
