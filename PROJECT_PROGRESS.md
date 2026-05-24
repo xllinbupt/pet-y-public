@@ -66,7 +66,7 @@ Pet Y 现在处于真实好友 MVP 阶段。
 - Skill 要求 Agent 先访谈用户，再生成宠物形象、动作状态、互动能力和 Life Pack。
 - Skill 明确要求不要用代码画正式宠物素材，正式素材应由图像模型生成或人工整理。
 - 公开仓库 `xllinbupt/pet-y-public` 已建立。
-- 公开 Runtime Release 已发布到 `v0.1.17`。
+- 公开 Runtime Release 已发布到 `v0.1.18`。
 - 好友 Quickstart 已说明：朋友应创建自己的宠物，不应直接运行邀请人的小狗。
 
 ## 3. 当前限制
