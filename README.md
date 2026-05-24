@@ -73,7 +73,7 @@ For a normal local user, start Runtime with the generic launcher. It creates a l
 ./scripts/run-desktop.sh
 ```
 
-Normal users do not need Xcode or local Swift compilation. The launcher uses the downloaded native Runtime in `bin/PetYDesktop`. Developers changing the Swift Runtime can still build it directly:
+Normal users do not need Xcode or local Swift compilation. The launcher installs the downloaded native Runtime under `~/Library/Application Support/PetY/Runtime` and stages Life Packs under `~/Library/Application Support/PetY/LifePacks`, so the desktop pet does not need to keep reading from the project folder. Developers changing the Swift Runtime can still build it directly:
 
 ```bash
 npm run build:desktop
