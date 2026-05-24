@@ -65,7 +65,7 @@ Pet Y 现在处于真实好友 MVP 阶段。
 - Relay 记录匿名化产品统计事件，用来观察有多少人启动 Runtime、注册宠物、创建邀请、添加好友、发起串门和触发互动。
 - 统计日志默认写入 Relay 服务器本地 `data/analytics.jsonl`，不记录留言正文、邀请口令、宠物图片或用户本地文件。
 - 管理统计接口 `/api/admin/stats` 默认只允许服务器本机访问；如需远程访问，应配置 `PET_Y_ADMIN_TOKEN`。
-- Relay 支持 `PET_Y_RELAY_SECRET` 访问口令；开启后，除健康检查和管理统计外，API 调用都需要知道口令。
+- 普通用户不需要 Relay 访问口令；好友邀请口令是添加关系的用户可见授权。管理统计仍由本机访问或 `PET_Y_ADMIN_TOKEN` 保护。
 
 ### Skill 与公开分享
 

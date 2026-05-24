@@ -93,7 +93,7 @@ PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 To let pets visit each other, every user must connect to the same Relay:
 
 ```bash
-PET_Y_RELAY=http://your-relay-host:8787 PET_Y_RELAY_SECRET=<relay-access-code> PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
+PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 ```
 
 From the macOS menu bar `Pet Y` item, choose `邀请好友一起玩`. Pet Y copies a share message containing the public repository, Relay URL, and friend invite phrase.
@@ -101,7 +101,7 @@ From the macOS menu bar `Pet Y` item, choose `邀请好友一起玩`. Pet Y copi
 Your friend gives that message to an Agent. Codex is preferred for this MVP because it can help generate pet images. The Agent should create and approve the pet image first, run the pet locally, then bind the friend relationship with:
 
 ```bash
-PET_Y_RELAY=http://your-relay-host:8787 PET_Y_RELAY_SECRET=<relay-access-code> ./scripts/accept-friend-invite.sh <friend-invite-phrase>
+PET_Y_RELAY=http://your-relay-host:8787 ./scripts/accept-friend-invite.sh <friend-invite-phrase>
 ```
 
 After binding, restart Pet Y Runtime. The inviter receives a local reminder after the friend is added. When both pets are online, click your pet and choose `串门`.
@@ -156,7 +156,7 @@ The Relay writes privacy-friendly analytics events to `data/analytics.jsonl` by 
 
 The analytics log does not store invite tokens, message text, pet image assets, or local user files. User and pet identifiers are hashed before being written.
 
-When `PET_Y_RELAY_SECRET` is configured on the server, all non-public Relay API calls must include the same access code through `x-pet-y-relay-secret`, `Authorization: Bearer ...`, or the Runtime's `PET_Y_RELAY_SECRET` environment variable. This keeps the public Relay from being usable by random scanners.
+Normal users do not need a Relay access code. Friend invite phrases are the user-facing authorization model for adding relationships. Admin stats remain protected by local-only access or `PET_Y_ADMIN_TOKEN`.
 
 Admin stats are available from the Relay host:
 
