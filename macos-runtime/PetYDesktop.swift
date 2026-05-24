@@ -961,7 +961,7 @@ final class ControlPanel: NSObject {
         let friendsItem = NSMenuItem(title: "好友", action: nil, keyEquivalent: "")
         let friendsMenu = NSMenu()
         friendsMenu.addItem(actionItem(title: "邀请好友一起玩", action: #selector(shareInviteTapped)))
-        friendsMenu.addItem(actionItem(title: "输入邀请码加好友", action: #selector(acceptInviteTapped)))
+        friendsMenu.addItem(actionItem(title: "输入好友邀请口令", action: #selector(acceptInviteTapped)))
         friendsMenu.addItem(.separator())
         if friends.isEmpty {
             let item = NSMenuItem(title: "暂无好友", action: nil, keyEquivalent: "")
@@ -1250,7 +1250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         创建完成后，请启动我的宠物，并连接这个 Relay：
         \(relayURL)
 
-        启动后，在 Pet Y 菜单里选择“输入邀请码加好友”，粘贴这个邀请码：
+        启动后，在 Pet Y 菜单里选择“输入好友邀请口令”，粘贴这段口令：
 
         \(token)
 
@@ -1262,12 +1262,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.icon = NSImage(systemSymbolName: "person.crop.circle.badge.plus", accessibilityDescription: "添加好友")
         alert.messageText = "添加好友"
-        alert.informativeText = "粘贴朋友发给你的邀请码。"
+        alert.informativeText = "粘贴朋友分享给你的邀请口令。"
         alert.addButton(withTitle: "添加")
         alert.addButton(withTitle: "取消")
 
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        input.placeholderString = "邀请码"
+        input.placeholderString = "好友邀请口令"
         alert.accessoryView = input
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -1276,7 +1276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func acceptInvite(token: String) {
         guard !token.isEmpty else {
-            sayLocal("邀请码是空的。")
+            sayLocal("邀请口令是空的。")
             return
         }
         let body = AcceptInviteRequest(user_id: userId, token: token)

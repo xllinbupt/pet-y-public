@@ -116,9 +116,7 @@ From the `Pet Y` menu bar item:
 - Choose `邀请好友一起玩` to copy a complete share message with setup instructions, Relay URL, and your invite code.
 - Give that message to another Runtime user.
 - The other user gives the message to Codex. Codex should install and prepare Pet Y, interview them, generate their own pet, then connect to the same Relay.
-- The other user chooses `输入邀请码加好友` and pastes your invite code.
-
-For debugging, `复制我的邀请码` still copies only the raw invite code.
+- The other user chooses `输入好友邀请口令` and pastes your invite phrase.
 
 Relay then creates a two-way friendship. Friend online status is refreshed through the Runtime heartbeat, and the pet-side `串门` action shows whether each friend is at home.
 
