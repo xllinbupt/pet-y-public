@@ -62,6 +62,7 @@ PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/<name>/pet-li
 ```
 
 The Runtime creates a stable local identity automatically.
+Runtime and pet resources are staged under `~/Library/Application Support/PetY`, so the desktop pet does not need broad access to the project folder after launch.
 
 ## 5. Add A Friend
 
