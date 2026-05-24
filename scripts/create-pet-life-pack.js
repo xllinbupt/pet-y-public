@@ -50,6 +50,8 @@ const lifePack = {
       "message",
       "return_home",
       "gift.simple",
+      "pet_to_pet.greeting",
+      "pet_to_pet.sit_together",
       "pet_to_pet.walk_together"
     ]
   },
@@ -83,7 +85,7 @@ const lifePack = {
   },
   memory_rules: {
     summary_style: "用宠物自己的口吻，把互动整理成一小段生活经历，不要像系统日志。",
-    remember_events: ["dragged", "fed", "host_runtime_offline", "host_requested_return"]
+    remember_events: ["dragged", "fed", "message", "pet_to_pet.greeting", "pet_to_pet.sit_together", "pet_to_pet.walk_together", "host_runtime_offline", "host_requested_return"]
   },
   visit_preferences: {
     likes_visiting: true,

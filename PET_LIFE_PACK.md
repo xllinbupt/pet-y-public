@@ -57,6 +57,8 @@ life-packs/<pet-id>/pet-life.json
 	    "message",
 	    "return_home",
 	    "gift.simple",
+	    "pet_to_pet.greeting",
+	    "pet_to_pet.sit_together",
 	    "pet_to_pet.walk_together"
 	  ]
 	},
@@ -192,7 +194,7 @@ life-packs/<pet-id>/pet-life.json
 - 移动类 sprite sheet 需要有统一朝向：`move` / `run` / `walk` / `hop` 默认面向右。Runtime 在宠物向左移动时负责水平翻转素材，生命包不需要为左右方向各准备一套图。
 - 复杂互动可以由多个动作语义组成。比如捡球不是单个 `carry_ball`，而是 `throw_ball_far -> move_to_target_scale_down -> pick_up_ball -> return_with_ball_scale_up -> rest`。这只是小狗案例，不是所有宠物的默认动作。
 - Runtime 可以在 sprite sheet 之外叠加空间效果，例如位置移动、缩放、气泡和道具窗口；生命包负责描述意图，Runtime 负责安全执行。
-- `interaction_capabilities` 用来声明来访时可接受的互动。Runtime 应只展示双方都支持的互动；旧生命包未声明时默认只支持 `petting`、`message`、`return_home`。`pet_to_pet.walk_together` 是第一版宠物和宠物之间的通用互动，表示两只宠物一起从桌面一处跑到另一处。
+- `interaction_capabilities` 用来声明来访时可接受的互动。Runtime 应只展示双方都支持的互动；旧生命包未声明时默认只支持 `petting`、`message`、`return_home`。基础宠物间互动包括 `pet_to_pet.greeting`、`pet_to_pet.sit_together` 和 `pet_to_pet.walk_together`，Runtime 可以用 `idle` / `rest` / `move` 组合出默认效果，不要求每个宠物都单独画专属素材。
 
 ## 5. Runtime 动作意图
 
@@ -206,7 +208,18 @@ Runtime 不应该假设所有宠物都会跑、坐下或叼球。它会先表达
 
 Skill 生成新宠物时，优先使用通用动作名：`idle`、`move`、`rest`、`sleep`、`signature_xxx`。
 
-## 6. 后续扩展
+## 6. 基础互动能力
+
+第一版生命包应该优先具备这些可跨宠物形态复用的互动能力：
+
+- `petting`：被宿主用户摸摸。Runtime 可用轻微弹跳和 `rest` 表达。
+- `message`：宿主用户给来访宠物留言，事件会带回给主人。
+- `return_home`：宿主可以把来访宠物送回家。
+- `pet_to_pet.greeting`：本地宠物和来访宠物互相打招呼。
+- `pet_to_pet.sit_together`：来访宠物靠近本地宠物，一起安静待一会儿。
+- `pet_to_pet.walk_together`：两只宠物一起从桌面一处移动到另一处。
+
+## 7. 后续扩展
 
 后续可以拆成多个文件：
 

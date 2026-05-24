@@ -231,6 +231,8 @@ function createMemoryReceipt(visit, reason = "departed") {
   const dragged = visit.events.find((event) => event.type === "dragged");
   const fed = visit.events.find((event) => event.type === "fed");
   const messages = visit.events.filter((event) => event.type === "message" && event.data?.text);
+  const greeted = visit.events.find((event) => event.type === "pet_to_pet.greeting");
+  const satTogether = visit.events.find((event) => event.type === "pet_to_pet.sit_together");
   const playedTogether = visit.events.find((event) => event.type === "pet_to_pet.walk_together");
   const clicked = visit.events.filter((event) => event.type === "clicked").length;
   const parts = [`${profile?.name || "宠物"} 去了 ${host?.display_name || visit.host_user_id} 的桌面`];
@@ -239,6 +241,8 @@ function createMemoryReceipt(visit, reason = "departed") {
   if (dragged) parts.push("被带到了新的角落");
   if (fed) parts.push(`收到了一份${fed.data?.item || "小点心"}`);
   if (messages.length > 0) parts.push(`收到了 ${messages.length} 条留言`);
+  if (greeted) parts.push("和那边的宠物打了招呼");
+  if (satTogether) parts.push("和那边的宠物靠在一起坐了一会儿");
   if (playedTogether) parts.push("和那边的宠物一起跑去玩了一会儿");
 
   if (reason === "host_runtime_offline") parts.push("因为那边突然离线就回家了");
@@ -252,6 +256,12 @@ function createMemoryReceipt(visit, reason = "departed") {
   }
   if (!fed && messages.length === 0 && playedTogether) {
     petVoice = `我刚刚和 ${host?.display_name || "朋友"} 那边的宠物一起跑去玩了一会儿。`;
+  }
+  if (!fed && messages.length === 0 && !playedTogether && satTogether) {
+    petVoice = `我刚刚和 ${host?.display_name || "朋友"} 那边的宠物安静坐了一会儿。`;
+  }
+  if (!fed && messages.length === 0 && !playedTogether && !satTogether && greeted) {
+    petVoice = `我刚刚和 ${host?.display_name || "朋友"} 那边的宠物打了个招呼。`;
   }
 
   if (reason === "host_runtime_offline") {

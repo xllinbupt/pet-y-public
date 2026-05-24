@@ -24,6 +24,8 @@
       "message",
       "return_home",
       "gift.simple",
+      "pet_to_pet.greeting",
+      "pet_to_pet.sit_together",
       "pet_to_pet.walk_together"
     ]
   },
@@ -181,7 +183,11 @@
       "dragged",
       "fed",
       "host_runtime_offline",
-      "host_requested_return"
+      "host_requested_return",
+      "message",
+      "pet_to_pet.greeting",
+      "pet_to_pet.sit_together",
+      "pet_to_pet.walk_together"
     ]
   },
   "visit_preferences": {
