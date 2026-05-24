@@ -80,9 +80,9 @@ To let pets visit each other, every user must connect to the same Relay:
 PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life.json ./scripts/run-desktop.sh
 ```
 
-From the macOS menu bar `Pet Y` item, choose `邀请好友一起玩`. Pet Y copies a share message containing the public repository, Relay URL, and invite code.
+From the macOS menu bar `Pet Y` item, choose `邀请好友一起玩`. Pet Y copies a share message containing the public repository, Relay URL, and friend invite phrase.
 
-Your friend gives that message to Codex. Codex should install and prepare Pet Y, interview them, generate their own pet, then connect to the same Relay. After that, your friend chooses `输入邀请码加好友` and pastes the invite code. When both pets are online, click your pet and choose `串门`.
+Your friend gives that message to Codex. Codex should install and prepare Pet Y, interview them, generate their own pet, then connect to the same Relay. After that, your friend chooses `输入好友邀请口令` and pastes the invite phrase. When both pets are online, click your pet and choose `串门`.
 
 See [Friend Quickstart](./FRIEND_QUICKSTART.md) for the current friend-testing flow.
 

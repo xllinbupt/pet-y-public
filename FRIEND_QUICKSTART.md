@@ -70,9 +70,7 @@ From the macOS menu bar `Pet Y` item:
 
 1. Choose `邀请好友一起玩`.
 2. Send the copied message to your friend.
-3. Your friend follows the message, then chooses `输入邀请码加好友` and pastes your invite code.
-
-For debugging, `复制我的邀请码` still copies only the raw invite code.
+3. Your friend follows the message, then chooses `输入好友邀请口令` and pastes your invite phrase.
 
 ## 6. Visit
 
