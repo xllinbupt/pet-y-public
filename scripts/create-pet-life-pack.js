@@ -49,7 +49,8 @@ const lifePack = {
       "petting",
       "message",
       "return_home",
-      "gift.simple"
+      "gift.simple",
+      "pet_to_pet.walk_together"
     ]
   },
   voice: {

@@ -125,7 +125,7 @@ For a generated pet, include at least:
 
 Prefer generic action names for new pets. Dog-specific states such as `run`, `sit`, and `carry_ball` are supported as legacy/example fallbacks, not as the default shape for every pet.
 
-For a generated pet, declare visitor interaction capabilities conservatively. Default to `petting`, `message`, and `return_home`; add capabilities such as `gift.simple` only when the pet's concept and behavior support them.
+For a generated pet, declare visitor interaction capabilities conservatively. Default to `petting`, `message`, `return_home`, and `pet_to_pet.walk_together`; add capabilities such as `gift.simple` only when the pet's concept and behavior support them.
 
 Use sprite sheet PNG. Plain PNG is not animated by itself; Runtime animates by stepping through frames.
 
