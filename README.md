@@ -4,9 +4,26 @@ Pet Y is an early concept for agent-generated social desktop pets.
 
 The project explores a desktop pet that is created and customized through an Agent, lives locally on the user's desktop, and can truly visit friends' desktops through a lightweight relay and open protocol.
 
+## 中文简介
+
+Pet Y 不是一只固定的桌面宠物，而是一套让 Agent 帮用户“创造宠物生命”的流程。
+
+当前原型已经能跑通一个真实社交闭环：
+
+- 用户通过 Pet Y Skill 访谈生成自己的宠物生命包。
+- 宠物作为原生 macOS 透明窗口生活在桌面上。
+- 宠物可以被摸摸、拖拽、睡觉、丢球互动，并把本地经历写进生活日志。
+- 用户可以邀请朋友，让朋友用自己的 Agent 创建另一只宠物。
+- 好友之间可以互相串门：宠物离家后会在主人桌面留下牌子，并出现在好友桌面。
+- 宿主可以和来访宠物互动、留言或送它回家；这些互动会通过 Relay 回到宠物主人本地，成为宠物的记忆线索。
+- 来访宠物的互动菜单会按能力过滤，只展示宿主 Runtime 和宠物名片都支持的动作。
+
+当前项目仍是 MVP：Runtime 只支持 macOS，Relay 仍是轻量内存服务，公开分发还没有签名公证的 `.app` 安装包。
+
 ## Documents
 
 - [Product Vision](./PRODUCT_VISION.md): product direction, core principles, social pet concept, memory, and relationship traces.
+- [Project Progress](./PROJECT_PROGRESS.md): current implementation state, completed milestones, known limits, and next steps.
 - [Pet Protocol Draft](./PET_PROTOCOL_DRAFT.md): protocol objects and the first version of the visit flow.
 - [MVP Scope](./MVP_SCOPE.md): what the first version must include, what it will intentionally exclude, and how to validate it.
 - [Technical Roadmap](./TECHNICAL_ROADMAP.md): recommended technical architecture, runtime choices, relay design, and development phases.
