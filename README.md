@@ -100,7 +100,7 @@ PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life.jso
 5. Momo disappears from Alice's desktop and leaves an away sign.
 6. Momo appears as a floating visitor pet on Bob's desktop.
 7. In Bob, click Momo to open quick actions, drag it, or choose a simple interaction.
-8. From Bob's Pet Y menu bar item, choose "送小客人回家".
+8. Alice can choose "喊我的宠物回来", or Bob can choose "送小客人回家".
 9. Alice receives a memory receipt and life log entry, and Momo returns home.
 
 Bob's desktop Runtime must be running for Momo to visit. If Bob is offline, Relay rejects the visit instead of creating a fake trip.
