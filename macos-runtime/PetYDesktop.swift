@@ -1565,22 +1565,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.returnVisitor()
             })
         }
-        for friend in friends {
-            actions.append(PetAction(title: "\(friend.display_name)\(friend.online ? "" : " 不在家")") { [weak self] in
+        let onlineFriends = friends.filter { $0.online }
+        for friend in onlineFriends {
+            actions.append(PetAction(title: friend.display_name) { [weak self] in
                 self?.closeInteractionMenu()
-                if friend.online {
-                    self?.sayLocal("我去问问 \(friend.display_name) 在不在家。")
-                    self?.sendVisit(to: friend.user_id, displayName: friend.display_name)
-                } else {
-                    self?.sayLocal("\(friend.display_name) 现在不在家。")
-                    self?.log("\(friend.display_name) 当前离线，不能串门。")
-                }
+                self?.sayLocal("我去问问 \(friend.display_name) 在不在家。")
+                self?.sendVisit(to: friend.user_id, displayName: friend.display_name)
             })
         }
         if friends.isEmpty {
             sayLocal("还没有好友，可以先邀请朋友。")
+        } else if onlineFriends.isEmpty {
+            sayLocal("好友现在都不在家。")
         } else {
-            sayLocal("好友都在这里。")
+            sayLocal("想去谁家串门？")
         }
         interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: localWindow.frame, actionCount: actions.count), actions: actions)
     }
