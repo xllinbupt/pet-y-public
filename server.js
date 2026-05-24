@@ -162,6 +162,10 @@ function addFriendship(a, b) {
   friendships.add(friendshipKey(b, a));
 }
 
+function friendSummaryFor(userId, friendId) {
+  return friendSummaries(userId).find((friend) => friend.user_id === friendId) || null;
+}
+
 function emitTo(userId, type, payload) {
   const event = {
     id: ++eventSequence,
@@ -367,6 +371,9 @@ async function handleApi(req, res, url) {
     ensureUser(user_id, user_id);
     ensureUser(invite.user_id, invite.display_name);
     addFriendship(user_id, invite.user_id);
+    emitTo(invite.user_id, "friend_added", {
+      friend: friendSummaryFor(invite.user_id, user_id)
+    });
     return sendJson(res, 200, {
       friend: users.get(invite.user_id),
       friends: friendSummaries(user_id)

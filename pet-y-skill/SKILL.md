@@ -56,6 +56,14 @@ Recommended asset workflow:
 4. Process the generated sheets into Runtime-ready transparent PNG files.
 5. Visually review the result on desktop scale before calling the pet finished.
 
+The friend flow order matters:
+
+1. Create and approve the pet's visual identity first.
+2. Generate and process the sprite sheets.
+3. Run the pet locally and confirm it appears correctly on the desktop.
+4. Restart Runtime after replacing or improving pet art assets.
+5. Only after the pet works locally, bind the friend relationship.
+
 Then validate:
 
 ```bash
@@ -84,7 +92,15 @@ For a remote friend test, point Runtime at the shared Relay:
 PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/<name>/pet-life.json ./scripts/run-desktop.sh
 ```
 
-After both users are online, use the menu bar item to copy an invite code, accept the friend's invite, then click the pet and choose `串门`.
+After the pet is running locally, bind the friend invite phrase. Prefer the script so an Agent can finish setup without asking the user to manually paste in the Runtime UI:
+
+```bash
+PET_Y_RELAY=http://your-relay-host:8787 ./scripts/accept-friend-invite.sh <friend-invite-phrase>
+```
+
+Restart Runtime after binding the friend relationship so the menu and friend status refresh. After both users are online, click the pet and choose `串门`.
+
+If macOS blocks the Runtime as unsafe, do not teach the user to bypass system security silently. Explain that this MVP is not yet a signed/notarized app, confirm the source repository and Release URL with the user, and prefer a signed/notarized `.app` packaging path for real distribution.
 
 ## Life Pack Requirements
 

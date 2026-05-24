@@ -51,13 +51,13 @@ Normal users do not need Xcode or local Swift compilation. Developers changing t
 
 ## Create A Pet
 
-Ask Codex to use the Pet Y Skill:
+Ask an Agent to use the Pet Y Skill. Codex is preferred for the current MVP because it can help generate pet images:
 
 ```text
 Use the Pet Y Skill to create my own desktop pet.
 ```
 
-Codex should install and prepare the project, then interview the user before generating a pet. It should ask about name, style, appearance, personality, actions, behaviors, and companionship preferences. Invited friends should create their own pets; they should not simply run the inviter's sample dog.
+The Agent should install and prepare the project, then interview the user before generating a pet. It should ask about name, style, appearance, personality, actions, behaviors, and companionship preferences. Invited friends should create their own pets; they should not simply run the inviter's sample dog.
 
 Or generate a starter Life Pack directly:
 
@@ -82,7 +82,13 @@ PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life
 
 From the macOS menu bar `Pet Y` item, choose `邀请好友一起玩`. Pet Y copies a share message containing the public repository, Relay URL, and friend invite phrase.
 
-Your friend gives that message to Codex. Codex should install and prepare Pet Y, interview them, generate their own pet, then connect to the same Relay. After that, your friend chooses `输入好友邀请口令` and pastes the invite phrase. When both pets are online, click your pet and choose `串门`.
+Your friend gives that message to an Agent. Codex is preferred for this MVP because it can help generate pet images. The Agent should create and approve the pet image first, run the pet locally, then bind the friend relationship with:
+
+```bash
+PET_Y_RELAY=http://your-relay-host:8787 ./scripts/accept-friend-invite.sh <friend-invite-phrase>
+```
+
+After binding, restart Pet Y Runtime. The inviter receives a local reminder after the friend is added. When both pets are online, click your pet and choose `串门`.
 
 See [Friend Quickstart](./FRIEND_QUICKSTART.md) for the current friend-testing flow.
 
