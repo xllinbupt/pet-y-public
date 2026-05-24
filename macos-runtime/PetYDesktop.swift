@@ -927,7 +927,6 @@ final class ControlPanel: NSObject {
     var status = "准备中"
     var friends: [FriendStatus] = []
     var recentLogs: [String] = []
-    var onRegister: (() -> Void)?
     var onSendVisit: ((String) -> Void)?
     var onReturn: (() -> Void)?
     var onCreateInvite: (() -> Void)?
@@ -972,26 +971,29 @@ final class ControlPanel: NSObject {
         menu.addItem(statusMenuItem)
         menu.addItem(.separator())
 
-        menu.addItem(actionItem(title: "注册宠物名片", action: #selector(registerTapped)))
-        menu.addItem(actionItem(title: "邀请好友一起玩", action: #selector(shareInviteTapped)))
-        menu.addItem(actionItem(title: "复制我的邀请码", action: #selector(createInviteTapped)))
-        menu.addItem(actionItem(title: "输入邀请码加好友", action: #selector(acceptInviteTapped)))
-        menu.addItem(.separator())
-
+        let friendsItem = NSMenuItem(title: "好友", action: nil, keyEquivalent: "")
+        let friendsMenu = NSMenu()
+        friendsMenu.addItem(actionItem(title: "邀请好友一起玩", action: #selector(shareInviteTapped)))
+        friendsMenu.addItem(actionItem(title: "输入邀请码加好友", action: #selector(acceptInviteTapped)))
+        friendsMenu.addItem(actionItem(title: "复制我的邀请码", action: #selector(createInviteTapped)))
+        friendsMenu.addItem(.separator())
         if friends.isEmpty {
-            let item = NSMenuItem(title: "暂无在线好友", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: "暂无好友", action: nil, keyEquivalent: "")
             item.isEnabled = false
-            menu.addItem(item)
+            friendsMenu.addItem(item)
         } else {
             for friend in friends {
-                let item = actionItem(title: "让宠物去 \(friend.display_name) \(friend.online ? "串门" : "（不在家）")", action: #selector(sendTapped(_:)))
+                let item = actionItem(title: "\(friend.display_name)\(friend.online ? " 串门" : " 不在家")", action: #selector(sendTapped(_:)))
                 item.representedObject = friend.user_id
                 item.isEnabled = friend.online
-                menu.addItem(item)
+                friendsMenu.addItem(item)
             }
         }
-
-        menu.addItem(actionItem(title: "请回来访宠物", action: #selector(returnTapped)))
+        friendsMenu.addItem(.separator())
+        friendsMenu.addItem(actionItem(title: "请回来访宠物", action: #selector(returnTapped)))
+        friendsItem.submenu = friendsMenu
+        menu.addItem(friendsItem)
+        menu.addItem(.separator())
 
         if !recentLogs.isEmpty {
             let logsItem = NSMenuItem(title: "最近日志", action: nil, keyEquivalent: "")
@@ -1016,7 +1018,6 @@ final class ControlPanel: NSObject {
         return item
     }
 
-    @objc private func registerTapped() { onRegister?() }
     @objc private func sendTapped(_ sender: NSMenuItem) { onSendVisit?(sender.representedObject as? String ?? "") }
     @objc private func returnTapped() { onReturn?() }
     @objc private func createInviteTapped() { onCreateInvite?() }
@@ -1071,7 +1072,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         panel = ControlPanel()
-        panel.onRegister = { [weak self] in self?.registerProfile() }
         panel.onSendVisit = { [weak self] friend in self?.sendVisit(to: friend) }
         panel.onReturn = { [weak self] in self?.returnVisitor() }
         panel.onCreateInvite = { [weak self] in self?.createInvite() }
@@ -1568,12 +1568,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.playSignatureAction()
             })
         }
-        actions.append(PetAction(title: "串门") { [weak self] in
-            self?.showVisitChoices()
-        })
-        actions.append(PetAction(title: "邀请") { [weak self] in
-            self?.closeInteractionMenu()
-            self?.shareInvite()
+        actions.append(PetAction(title: "好友") { [weak self] in
+            self?.showFriendActions()
         })
         actions.append(
             PetAction(title: "睡觉") { [weak self] in
@@ -1584,35 +1580,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: localWindow.frame, actionCount: actions.count), actions: actions)
     }
 
-    private func showVisitChoices() {
+    private func showFriendActions() {
         guard let localWindow else { return }
         closeInteractionMenu()
-        if friends.isEmpty {
-            sayLocal("现在没有可以串门的好友。")
-            log("没有好友可以串门。")
-            return
-        }
-        if friends.count == 1, let friend = friends.first {
-            if friend.online {
-                sayLocal("我去问问 \(friend.display_name) 在不在家。")
-                sendVisit(to: friend.user_id, displayName: friend.display_name)
-            } else {
-                sayLocal("\(friend.display_name) 现在不在家。")
-                log("\(friend.display_name) 当前离线，不能串门。")
+        var actions = [
+            PetAction(title: "邀请") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.shareInvite()
+            },
+            PetAction(title: "加好友") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.promptForInvite()
             }
-            return
+        ]
+        if visitorVisit != nil {
+            actions.append(PetAction(title: "请回") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.returnVisitor()
+            })
         }
-        sayLocal("我可以去哪儿串门？")
-        let actions = friends.map { friend in
-            PetAction(title: "\(friend.display_name)\(friend.online ? "" : " 不在家")") { [weak self] in
+        for friend in friends {
+            actions.append(PetAction(title: "\(friend.display_name)\(friend.online ? "" : " 不在家")") { [weak self] in
                 self?.closeInteractionMenu()
                 if friend.online {
+                    self?.sayLocal("我去问问 \(friend.display_name) 在不在家。")
                     self?.sendVisit(to: friend.user_id, displayName: friend.display_name)
                 } else {
                     self?.sayLocal("\(friend.display_name) 现在不在家。")
                     self?.log("\(friend.display_name) 当前离线，不能串门。")
                 }
-            }
+            })
+        }
+        if friends.isEmpty {
+            sayLocal("还没有好友，可以先邀请朋友。")
+        } else {
+            sayLocal("好友都在这里。")
         }
         interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: localWindow.frame, actionCount: actions.count), actions: actions)
     }
