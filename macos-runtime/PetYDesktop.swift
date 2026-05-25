@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.25"
+let PetYRuntimeVersion = "v0.1.26"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -1147,6 +1147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var interactionMenuFollowTimer: Timer?
     var visitorVisit: VisitSession?
     var outgoingVisit: VisitSession?
+    var outgoingVisitTargetName: String?
     var friends: [FriendStatus] = []
     var lastEventId = 0
     var pollTimer: Timer?
@@ -1244,6 +1245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         awaySignWindow?.close()
         awaySignWindow = nil
         outgoingVisit = nil
+        outgoingVisitTargetName = nil
         panel?.setHasAwayPet(false)
         guard localWindow == nil else { return }
 
@@ -1448,10 +1450,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch result {
                 case .success(let response):
                     self?.outgoingVisit = response.visit
-                    self?.panel.setStatus("\(self?.localPet.name ?? "宠物") 已出门")
-                    self?.sayLocal("我出门啦。")
-                    self?.showAwaySign(to: friendName)
-                    self?.log("创建串门会话：\(response.visit.visit_id)")
+                    self?.outgoingVisitTargetName = friendName
+                    if response.visit.status == "active" {
+                        self?.panel.setStatus("\(self?.localPet.name ?? "宠物") 已出门")
+                        self?.sayLocal("对方开门啦，我出门了。")
+                        self?.showAwaySign(to: friendName)
+                    } else {
+                        self?.panel.setStatus("正在等 \(friendName) 开门")
+                        self?.sayLocal("我先敲敲门。")
+                    }
+                    self?.log("创建串门请求：\(response.visit.visit_id)")
                 case .failure(let error):
                     let message = self?.visitFailureMessage(error) ?? "串门失败了。"
                     self?.panel.setStatus(message)
@@ -1525,16 +1533,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch event.type {
         case "profile_registered":
             break
+        case "visit_requested":
+            if let payload = try? decoder.decode(VisitStartedPayload.self, from: data) {
+                answerVisitRequest(payload)
+            }
         case "visit_started":
             if let payload = try? decoder.decode(VisitStartedPayload.self, from: data) {
                 showVisitor(payload)
             }
         case "visit_status":
             if let visit = try? decoder.decode(VisitSession.self, from: data),
-               visit.owner_user_id == userId,
-               visit.status == "active" {
-                outgoingVisit = visit
-                panel.setHasAwayPet(true)
+               visit.owner_user_id == userId {
+                handleOutgoingVisitStatus(visit)
             }
         case "friend_added":
             if let payload = try? decoder.decode(FriendAddedPayload.self, from: data),
@@ -1606,6 +1616,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         visitorWindow = PetWindow(view: view, origin: CGPoint(x: screen.maxX - 320, y: screen.minY + 300))
         view.say("我是 \(payload.profile.name)，右键可以投喂我。")
         remember("\(payload.profile.name) 来你的桌面串门了。")
+    }
+
+    private func handleOutgoingVisitStatus(_ visit: VisitSession) {
+        switch visit.status {
+        case "pending":
+            outgoingVisit = visit
+            panel.setStatus("正在等对方开门")
+        case "active":
+            let wasActive = outgoingVisit?.status == "active"
+            outgoingVisit = visit
+            let friendName = outgoingVisitTargetName ?? friends.first(where: { $0.user_id == visit.host_user_id })?.display_name ?? visit.host_user_id
+            panel.setHasAwayPet(true)
+            panel.setStatus("\(localPet.name) 已出门")
+            if !wasActive {
+                sayLocal("对方开门啦，我出门了。")
+                showAwaySign(to: friendName)
+            }
+        case "declined":
+            outgoingVisit = nil
+            outgoingVisitTargetName = nil
+            panel.setHasAwayPet(false)
+            panel.setStatus("对方这次没开门")
+            sayLocal("对方这次没开门，我留在家里。")
+            log("串门请求被拒绝。")
+        case "cancelled", "failed":
+            outgoingVisit = nil
+            outgoingVisitTargetName = nil
+            panel.setHasAwayPet(false)
+            panel.setStatus("串门取消了")
+            sayLocal("这次先不出门了。")
+            log("串门请求已取消。")
+        default:
+            break
+        }
+    }
+
+    private func answerVisitRequest(_ payload: VisitStartedPayload) {
+        let alert = NSAlert()
+        alert.icon = NSImage(systemSymbolName: "door.left.hand.open", accessibilityDescription: "敲门")
+        alert.messageText = "\(payload.profile.name) 在敲门"
+        alert.informativeText = "它想来你的桌面玩一会儿。"
+        alert.addButton(withTitle: "让它进来")
+        alert.addButton(withTitle: "这次不了")
+        let accepted = alert.runModal() == .alertFirstButtonReturn
+        let body = VisitDecisionRequest(user_id: userId, action: accepted ? "accept" : "decline")
+        relay.post("api/visits/\(payload.visit.visit_id)/decision", body: body) { [weak self] (result: Result<VisitDecisionResponse, Error>) in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    self?.log(accepted ? "已同意 \(payload.profile.name) 来串门。" : "已拒绝 \(payload.profile.name) 来串门。")
+                case .failure(let error):
+                    self?.log("回应敲门失败：\(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     private func materializeVisitorAssets(_ payload: VisitStartedPayload) -> URL? {
@@ -1685,8 +1750,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 switch result {
                 case .success:
-                    self?.panel.setStatus("正在回家")
-                    self?.log("已喊宠物回家。")
+                    if visit.status == "pending" {
+                        self?.outgoingVisit = nil
+                        self?.outgoingVisitTargetName = nil
+                        self?.panel.setStatus("已取消敲门")
+                        self?.log("已取消串门请求。")
+                    } else {
+                        self?.panel.setStatus("正在回家")
+                        self?.log("已喊宠物回家。")
+                    }
                 case .failure(let error):
                     self?.log("喊宠物回家失败：\(error.localizedDescription)")
                 }
@@ -2327,6 +2399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct ProfileResponse: Codable { let profile: PetProfile }
 struct VisitResponse: Codable { let visit: VisitSession }
+struct VisitDecisionResponse: Codable { let visit: VisitSession }
 struct EndVisitResponse: Codable { let receipt: MemoryReceipt? }
 struct InteractionResponse: Codable { let event: InteractionEvent }
 struct InteractionEvent: Codable {
@@ -2339,6 +2412,11 @@ struct VisitRequest: Codable {
     let owner_user_id: String
     let host_user_id: String
     let departure_context: [String: String]
+}
+
+struct VisitDecisionRequest: Codable {
+    let user_id: String
+    let action: String
 }
 
 struct InteractionRequest: Codable {
