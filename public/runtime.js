@@ -214,15 +214,24 @@ async function sendVisit() {
 }
 
 async function recordVisitEvent(visitId, type, data) {
-  const { event } = await api(`/api/visits/${visitId}/events`, {
-    method: "POST",
-    body: JSON.stringify({
-      type,
-      data,
-      actor: { type: "host_user", user_id: userId }
-    })
-  });
-  addProtocolLog(`记录互动事件：${event.type}`);
+  try {
+    const { event } = await api(`/api/visits/${visitId}/events`, {
+      method: "POST",
+      body: JSON.stringify({
+        type,
+        data,
+        actor: { type: "host_user", user_id: userId }
+      })
+    });
+    addProtocolLog(`记录互动事件：${event.type}`);
+  } catch (error) {
+    if (String(error.message).includes("Visit not found") || String(error.message).includes("Visit is not active")) {
+      clearVisitors();
+      addProtocolLog("来访会话已经结束，已清理本地来访宠物。");
+      return;
+    }
+    throw error;
+  }
 }
 
 async function feedVisitor() {
@@ -240,13 +249,17 @@ async function returnVisitor() {
     return;
   }
   const visitId = state.activeVisitor.visit.visit_id;
-  await api(`/api/visits/${visitId}/end`, {
-    method: "POST",
-    body: JSON.stringify({
-      reason: "host_requested_return",
-      actor: { type: "host_user", user_id: userId }
-    })
-  });
+  try {
+    await api(`/api/visits/${visitId}/end`, {
+      method: "POST",
+      body: JSON.stringify({
+        reason: "host_requested_return",
+        actor: { type: "host_user", user_id: userId }
+      })
+    });
+  } catch (error) {
+    if (!String(error.message).includes("Visit not found")) throw error;
+  }
   clearVisitors();
   addProtocolLog(`已请回来访宠物：${visitId}`);
 }
