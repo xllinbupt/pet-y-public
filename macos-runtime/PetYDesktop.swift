@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.32"
+let PetYRuntimeVersion = "v0.1.33"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -1261,14 +1261,19 @@ final class ControlPanel: NSObject {
             friendsMenu.addItem(item)
         } else {
             for friend in friends {
-                let item = actionItem(title: "\(friend.display_name)\(friend.online ? " 串门" : " 不在家")", action: #selector(sendTapped(_:)))
+                guard friend.online else {
+                    let item = NSMenuItem(title: "\(friend.display_name) 不在家", action: nil, keyEquivalent: "")
+                    item.isEnabled = false
+                    friendsMenu.addItem(item)
+                    continue
+                }
+
+                let item = actionItem(title: "\(friend.display_name) 串门", action: #selector(sendTapped(_:)))
                 item.representedObject = friend.user_id
-                item.isEnabled = friend.online
                 friendsMenu.addItem(item)
 
                 let inviteItem = actionItem(title: "邀请 \(friend.display_name) 来我家", action: #selector(inviteFriendPetTapped(_:)))
                 inviteItem.representedObject = friend.user_id
-                inviteItem.isEnabled = friend.online
                 friendsMenu.addItem(inviteItem)
             }
         }
@@ -2366,16 +2371,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showFriendActions() {
         guard let localWindow else { return }
         closeInteractionMenu()
-        var actions = [
-            PetAction(title: "邀请好友一起玩") { [weak self] in
-                self?.closeInteractionMenu()
-                self?.shareInvite()
-            },
-            PetAction(title: "加好友") { [weak self] in
-                self?.closeInteractionMenu()
-                self?.promptForInvite()
+        var actions: [PetAction] = []
+        for friend in friends {
+            if friend.online {
+                actions.append(PetAction(title: friend.display_name) { [weak self] in
+                    self?.showFriendActionPicker(friend)
+                })
+            } else {
+                actions.append(PetAction(title: "\(friend.display_name) 不在家") { [weak self] in
+                    self?.sayLocal("\(friend.display_name) 现在不在家。")
+                })
             }
-        ]
+        }
+        actions.append(PetAction(title: "发邀请") { [weak self] in
+            self?.closeInteractionMenu()
+            self?.shareInvite()
+        })
+        actions.append(PetAction(title: "加好友") { [weak self] in
+            self?.closeInteractionMenu()
+            self?.promptForInvite()
+        })
         if !visitors.isEmpty {
             actions.append(PetAction(title: "送回家") { [weak self] in
                 self?.closeInteractionMenu()
@@ -2388,25 +2403,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.recallLocalPet()
             })
         }
-        let onlineFriends = friends.filter { $0.online }
-        for friend in onlineFriends {
-            actions.append(PetAction(title: friend.display_name) { [weak self] in
-                self?.closeInteractionMenu()
-                self?.sayLocal("我去问问 \(friend.display_name) 在不在家。")
-                self?.sendVisit(to: friend.user_id, displayName: friend.display_name)
-            })
-            actions.append(PetAction(title: "请 \(friend.display_name) 来") { [weak self] in
-                self?.closeInteractionMenu()
-                self?.inviteFriendPet(to: friend.user_id)
-            })
-        }
         if friends.isEmpty {
             sayLocal("还没有好友，可以先邀请朋友。")
-        } else if onlineFriends.isEmpty {
+        } else if friends.filter({ $0.online }).isEmpty {
             sayLocal("好友现在都不在家。")
         } else {
-            sayLocal("想去谁家串门？")
+            sayLocal("想找哪个朋友？")
         }
+        showInteractionMenu(anchor: localWindow, actions: actions)
+    }
+
+    private func showFriendActionPicker(_ friend: FriendStatus) {
+        guard let localWindow else { return }
+        closeInteractionMenu()
+        guard friend.online else {
+            sayLocal("\(friend.display_name) 现在不在家。")
+            return
+        }
+        var actions = [
+            PetAction(title: "去串门") { [weak self] in
+                self?.sayLocal("我去问问 \(friend.display_name) 在不在家。")
+                self?.sendVisit(to: friend.user_id, displayName: friend.display_name)
+            },
+            PetAction(title: "邀请好友来") { [weak self] in
+                self?.inviteFriendPet(to: friend.user_id)
+            }
+        ]
+        actions.append(PetAction(title: "返回") { [weak self] in
+            self?.showFriendActions()
+        })
+        sayLocal("想和 \(friend.display_name) 做什么？")
         showInteractionMenu(anchor: localWindow, actions: actions)
     }
 
