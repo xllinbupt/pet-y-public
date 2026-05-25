@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.33"
+let PetYRuntimeVersion = "v0.1.34"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -473,9 +473,11 @@ final class RelayClient {
 }
 
 final class PetWindow: NSWindow {
+    static let windowSize = NSSize(width: 220, height: 190)
+
     init(view: PetView, origin: CGPoint) {
         super.init(
-            contentRect: NSRect(x: origin.x, y: origin.y, width: 124, height: 138),
+            contentRect: NSRect(x: origin.x, y: origin.y, width: PetWindow.windowSize.width, height: PetWindow.windowSize.height),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -898,7 +900,7 @@ final class PetView: NSView {
         self.onClick = onClick
         self.onAlternateClick = onAlternateClick
         self.onDragEnd = onDragEnd
-        super.init(frame: NSRect(x: 0, y: 0, width: 124, height: 138))
+        super.init(frame: NSRect(x: 0, y: 0, width: PetWindow.windowSize.width, height: PetWindow.windowSize.height))
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         play("idle")
@@ -960,7 +962,8 @@ final class PetView: NSView {
         bubble = text
         needsDisplay = true
         bubbleTimer?.invalidate()
-        bubbleTimer = Timer.scheduledTimer(withTimeInterval: 2.8, repeats: false) { [weak self] _ in
+        let duration = min(8.0, max(3.2, Double(text.count) * 0.08))
+        bubbleTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
             self?.bubble = nil
             self?.needsDisplay = true
         }
@@ -1060,9 +1063,10 @@ final class PetView: NSView {
         }
 
         let color = NSColor(hex: profile.preview) ?? (isVisitor ? NSColor.systemCoral : NSColor.systemMint)
-        let body = NSRect(x: 24, y: 28, width: 76, height: 62)
-        drawEar(NSRect(x: 33, y: 80, width: 22, height: 30), rotation: -16, color: color)
-        drawEar(NSRect(x: 69, y: 80, width: 22, height: 30), rotation: 16, color: color)
+        let bodyX = (bounds.width - 76) / 2
+        let body = NSRect(x: bodyX, y: 28, width: 76, height: 62)
+        drawEar(NSRect(x: bodyX + 9, y: 80, width: 22, height: 30), rotation: -16, color: color)
+        drawEar(NSRect(x: bodyX + 45, y: 80, width: 22, height: 30), rotation: 16, color: color)
 
         let path = NSBezierPath(roundedRect: body, xRadius: 22, yRadius: 22)
         color.setFill()
@@ -1072,12 +1076,12 @@ final class PetView: NSView {
         path.stroke()
 
         NSColor.black.setFill()
-        NSBezierPath(ovalIn: NSRect(x: 46, y: 58, width: 8, height: 10)).fill()
-        NSBezierPath(ovalIn: NSRect(x: 72, y: 58, width: 8, height: 10)).fill()
+        NSBezierPath(ovalIn: NSRect(x: bodyX + 22, y: 58, width: 8, height: 10)).fill()
+        NSBezierPath(ovalIn: NSRect(x: bodyX + 48, y: 58, width: 8, height: 10)).fill()
 
         let mouth = NSBezierPath()
-        mouth.move(to: NSPoint(x: 57, y: 48))
-        mouth.curve(to: NSPoint(x: 67, y: 48), controlPoint1: NSPoint(x: 60, y: 43), controlPoint2: NSPoint(x: 64, y: 43))
+        mouth.move(to: NSPoint(x: bodyX + 33, y: 48))
+        mouth.curve(to: NSPoint(x: bodyX + 43, y: 48), controlPoint1: NSPoint(x: bodyX + 36, y: 43), controlPoint2: NSPoint(x: bodyX + 40, y: 43))
         mouth.lineWidth = 2.5
         mouth.stroke()
 
@@ -1095,7 +1099,7 @@ final class PetView: NSView {
         )
         let spriteSize = 64 * renderScale
         let target = NSRect(
-            x: 30 + (64 - spriteSize) / 2,
+            x: (bounds.width - spriteSize) / 2,
             y: 28 + (64 - spriteSize) / 2,
             width: spriteSize,
             height: spriteSize
@@ -1146,18 +1150,21 @@ final class PetView: NSView {
     private func drawBubble(_ text: String) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: NSColor.black,
             .paragraphStyle: paragraph
         ]
-        let limit = NSSize(width: 112, height: 44)
+        let bubbleWidth = min(bounds.width - 12, 208)
+        let limit = NSSize(width: bubbleWidth - 16, height: 76)
         let rect = NSString(string: text).boundingRect(
             with: limit,
             options: [.usesLineFragmentOrigin],
             attributes: attributes
         )
-        let bubbleRect = NSRect(x: 6, y: 96, width: 112, height: Swift.max(28, rect.height + 12))
+        let bubbleHeight = min(88, Swift.max(32, rect.height + 14))
+        let bubbleRect = NSRect(x: (bounds.width - bubbleWidth) / 2, y: bounds.height - bubbleHeight - 6, width: bubbleWidth, height: bubbleHeight)
         let path = NSBezierPath(roundedRect: bubbleRect, xRadius: 8, yRadius: 8)
         NSColor.white.withAlphaComponent(0.96).setFill()
         path.fill()
@@ -1383,7 +1390,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var outgoingVisitTargetName: String?
     var friends: [FriendStatus] = []
     var lastEventId = 0
+    var handledEventIds: Set<Int> = []
+    var pollInFlight = false
     var pollTimer: Timer?
+    var activeVisitInvitationIds: Set<String> = []
+    var answeredVisitInvitationIds: Set<String> = []
     var lastFriendOnlineNotifiedAt: [String: Date] = [:]
     var localSleepTimer: Timer?
     var localRoamTimer: Timer?
@@ -1457,7 +1468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.scheduleLocalRoam()
             }
         )
-        localWindow = PetWindow(view: view, origin: CGPoint(x: screen.maxX - 180, y: screen.minY + 140))
+        localWindow = PetWindow(view: view, origin: CGPoint(x: screen.maxX - PetWindow.windowSize.width - 40, y: screen.minY + 140))
         scheduleLocalSleep()
         scheduleLocalRoam()
     }
@@ -1510,7 +1521,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        localWindow = PetWindow(view: view, origin: origin ?? CGPoint(x: screen.maxX - 180, y: screen.minY + 140))
+        localWindow = PetWindow(view: view, origin: origin ?? CGPoint(x: screen.maxX - PetWindow.windowSize.width - 40, y: screen.minY + 140))
         playLocal(.returnWithGift, returnToIdleAfter: 2.8)
         scheduleLocalSleep()
         scheduleLocalRoam()
@@ -1862,9 +1873,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func pollEvents() {
+        guard !pollInFlight else { return }
+        pollInFlight = true
         relay.get("api/events/poll?user=\(userId)&after=\(lastEventId)") { [weak self] (result: Result<PollResponse, Error>) in
             DispatchQueue.main.async {
                 guard let self else { return }
+                self.pollInFlight = false
                 if case .success(let response) = result {
                     if let friends = response.friends {
                         self.notifyNewlyOnlineFriends(friends)
@@ -1872,12 +1886,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.panel.configure(title: self.panel.title, friends: friends)
                     }
                     for event in response.events {
-                        self.lastEventId = max(self.lastEventId, event.id)
+                        guard self.markEventHandled(event) else { continue }
                         self.handle(event)
                     }
                 }
             }
         }
+    }
+
+    private func markEventHandled(_ event: RelayEvent) -> Bool {
+        guard !handledEventIds.contains(event.id) else { return false }
+        handledEventIds.insert(event.id)
+        if handledEventIds.count > 300 {
+            handledEventIds = Set(handledEventIds.sorted().suffix(200))
+        }
+        lastEventId = max(lastEventId, event.id)
+        return true
     }
 
     private func notifyNewlyOnlineFriends(_ nextFriends: [FriendStatus]) {
@@ -2095,13 +2119,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func knockOrigin() -> CGPoint {
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        let anchor = localWindow?.frame ?? NSRect(x: screen.maxX - 180, y: screen.minY + 140, width: 124, height: 138)
+        let anchor = localWindow?.frame ?? NSRect(x: screen.maxX - PetWindow.windowSize.width - 40, y: screen.minY + 140, width: PetWindow.windowSize.width, height: PetWindow.windowSize.height)
         let x = min(max(anchor.midX - 129, screen.minX + 16), screen.maxX - 274)
         let y = min(max(anchor.maxY + 8, screen.minY + 16), screen.maxY - 164)
         return CGPoint(x: x, y: y)
     }
 
     private func answerVisitInvitation(_ payload: VisitInvitationPayload) {
+        let requestId = payload.invitation.request_id
+        guard !activeVisitInvitationIds.contains(requestId),
+              !answeredVisitInvitationIds.contains(requestId) else { return }
+        activeVisitInvitationIds.insert(requestId)
         let requesterName = payload.requester?.display_name ?? payload.invitation.requester_user_id
         if isDoNotDisturbActive() {
             decideVisitInvitation(payload.invitation, accept: false, requesterName: requesterName)
@@ -2118,9 +2146,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func decideVisitInvitation(_ invitation: VisitInvitation, accept: Bool, requesterName: String) {
+        answeredVisitInvitationIds.insert(invitation.request_id)
         let body = VisitDecisionRequest(user_id: userId, action: accept ? "accept" : "decline")
         relay.post("api/visit-invitations/\(invitation.request_id)/decision", body: body) { [weak self] (result: Result<VisitInvitationResponse, Error>) in
             DispatchQueue.main.async {
+                self?.activeVisitInvitationIds.remove(invitation.request_id)
                 switch result {
                 case .success(let response):
                     if accept, let visit = response.visit {
@@ -2706,22 +2736,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let messages = receipt.messages?.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? []
         guard !messages.isEmpty else { return }
 
-        let body = messages
-            .prefix(8)
+        let messageLines = messages
+            .prefix(3)
             .enumerated()
             .map { index, message in
                 let author = message.author_name?.isEmpty == false ? message.author_name! : "朋友"
-                return "\(index + 1). \(author)：\(message.text)"
+                return "\(index + 1). \(author)：\(message.text.trimmingCharacters(in: .whitespacesAndNewlines))"
             }
-            .joined(separator: "\n\n")
-
-        let alert = NSAlert()
-        alert.icon = NSImage(systemSymbolName: "text.bubble.fill", accessibilityDescription: "留言")
-        alert.messageText = "\(localPet.name) 带回了留言"
-        alert.informativeText = body
-        alert.addButton(withTitle: "关闭")
-        alert.runModal()
-
+        var bubbleText = "我回来了：\(receipt.pet_voice)\n留言：\(messageLines.joined(separator: " / "))"
+        if messages.count > 3 {
+            bubbleText += " / 还有 \(messages.count - 3) 条"
+        }
+        sayLocal(String(bubbleText.prefix(180)))
         log("\(localPet.name) 带回 \(messages.count) 条留言。")
     }
 
@@ -2960,7 +2986,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let start = localWindow.frame.origin
-        let farX = start.x < screen.midX ? screen.maxX - 180 : screen.minX + 120
+        let farX = start.x < screen.midX ? screen.maxX - PetWindow.windowSize.width - 40 : screen.minX + 120
         let farY = min(max(start.y + 180, screen.minY + 100), screen.maxY - 180)
         let ballOrigin = CGPoint(x: farX + 44, y: farY + 34)
 
@@ -3093,7 +3119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         closeInteractionMenu()
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        let x = CGFloat.random(in: (screen.minX + 80)...(screen.maxX - 180))
+        let x = CGFloat.random(in: (screen.minX + 80)...(screen.maxX - PetWindow.windowSize.width - 40))
         let y = CGFloat.random(in: (screen.minY + 80)...(screen.maxY - 180))
         let target = CGPoint(x: x, y: y)
         let start = localWindow?.frame.origin ?? target
@@ -3123,7 +3149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let visitorWindow = visitor.window
         closeInteractionMenu()
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        let x = CGFloat.random(in: (screen.minX + 80)...(screen.maxX - 180))
+        let x = CGFloat.random(in: (screen.minX + 80)...(screen.maxX - PetWindow.windowSize.width - 40))
         let y = CGFloat.random(in: (screen.minY + 80)...(screen.maxY - 180))
         let target = CGPoint(x: x, y: y)
         let start = visitorWindow.frame.origin
