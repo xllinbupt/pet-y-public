@@ -362,7 +362,10 @@ function createMemoryReceipt(visit, reason = "departed") {
   if (messages.length > 0) parts.push(`收到了 ${messages.length} 条留言`);
   if (greeted) parts.push("和那边的宠物打了招呼");
   if (satTogether) parts.push("和那边的宠物靠在一起坐了一会儿");
-  if (playedTogether) parts.push("和那边的宠物一起跑去玩了一会儿");
+  if (playedTogether) {
+    const peerName = playedTogether.data?.peer_pet_name;
+    parts.push(peerName ? `和 ${peerName} 一起跑去玩了一会儿` : "和那边的宠物一起跑去玩了一会儿");
+  }
   if (autonomousRoam) parts.push("自己在那边桌面上逛了逛");
 
   if (reason === "host_runtime_offline") parts.push("因为那边突然离线就回家了");
