@@ -75,6 +75,8 @@ PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_LIFE_PACK=life-packs/<name>/pet-life.j
 The Runtime creates a stable local identity automatically.
 Runtime and pet resources are staged under `~/Library/Application Support/PetY`, so the desktop pet does not need broad access to the project folder after launch.
 
+Runtime shows its current version in the macOS `Pet Y` menu bar item. Use `检查更新` there to open the latest public Release when a newer Runtime is available.
+
 ## 5. Add A Friend
 
 Invite friends who can run Pet Y on a Mac. The friend invite flow assumes the invited friend can launch the macOS Runtime after their Agent creates a pet.

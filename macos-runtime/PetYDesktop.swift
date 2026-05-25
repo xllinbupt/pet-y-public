@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.30"
+let PetYRuntimeVersion = "v0.1.31"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -81,6 +81,11 @@ struct AcceptInviteResponse: Codable {
 
 struct FriendAddedPayload: Codable {
     let friend: FriendStatus?
+}
+
+struct GitHubRelease: Codable {
+    let tag_name: String
+    let html_url: String?
 }
 
 struct VisitSession: Codable {
@@ -1030,12 +1035,16 @@ final class ControlPanel: NSObject {
     var friends: [FriendStatus] = []
     var hasVisitor = false
     var hasAwayPet = false
+    var updateVersion: String?
+    var updateURL: URL?
     var recentLogs: [String] = []
     var onSendVisit: ((String) -> Void)?
     var onReturn: (() -> Void)?
     var onRecallPet: (() -> Void)?
     var onShareInvite: (() -> Void)?
     var onAcceptInvite: (() -> Void)?
+    var onCheckUpdate: (() -> Void)?
+    var onOpenUpdate: (() -> Void)?
 
     override init() {
         super.init()
@@ -1065,6 +1074,12 @@ final class ControlPanel: NSObject {
         rebuildMenu()
     }
 
+    func setUpdateAvailable(version: String?, url: URL?) {
+        updateVersion = version
+        updateURL = url
+        rebuildMenu()
+    }
+
     func appendLog(_ text: String) {
         let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         recentLogs.insert("[\(stamp)] \(text)", at: 0)
@@ -1084,6 +1099,13 @@ final class ControlPanel: NSObject {
         let statusMenuItem = NSMenuItem(title: status, action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
+        menu.addItem(.separator())
+
+        if let updateVersion {
+            menu.addItem(actionItem(title: "发现新版本 \(updateVersion)，打开下载页", action: #selector(openUpdateTapped)))
+        } else {
+            menu.addItem(actionItem(title: "检查更新", action: #selector(checkUpdateTapped)))
+        }
         menu.addItem(.separator())
 
         let friendsItem = NSMenuItem(title: "好友", action: nil, keyEquivalent: "")
@@ -1144,6 +1166,8 @@ final class ControlPanel: NSObject {
     @objc private func recallPetTapped() { onRecallPet?() }
     @objc private func shareInviteTapped() { onShareInvite?() }
     @objc private func acceptInviteTapped() { onAcceptInvite?() }
+    @objc private func checkUpdateTapped() { onCheckUpdate?() }
+    @objc private func openUpdateTapped() { onOpenUpdate?() }
     @objc private func quitTapped() { NSApp.terminate(nil) }
 }
 
@@ -1199,6 +1223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var localRoamTimer: Timer?
     var localAnimationTimer: Timer?
     var visitorPairTimer: Timer?
+    var latestRuntimeReleaseURL: URL?
 
     override init() {
         let args = CommandLine.arguments
@@ -1228,6 +1253,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onRecallPet = { [weak self] in self?.recallLocalPet() }
         panel.onShareInvite = { [weak self] in self?.shareInvite() }
         panel.onAcceptInvite = { [weak self] in self?.promptForInvite() }
+        panel.onCheckUpdate = { [weak self] in self?.checkForRuntimeUpdate(silent: false) }
+        panel.onOpenUpdate = { [weak self] in self?.openRuntimeReleasePage() }
 
         restorePersistentLogToPanel()
         createLocalPet()
@@ -1334,6 +1361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.log("桌面 Runtime \(PetYRuntimeVersion) 已启动。")
                     self?.registerProfile()
                     self?.startPolling()
+                    self?.checkForRuntimeUpdate(silent: true)
                 case .failure(let error):
                     self?.panel.setStatus("Relay 未连接：\(error.localizedDescription)")
                     self?.log("连接 Relay 失败：\(error.localizedDescription)")
@@ -1353,6 +1381,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private func checkForRuntimeUpdate(silent: Bool) {
+        guard let url = URL(string: "https://api.github.com/repos/xllinbupt/pet-y-public/releases/latest") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("PetYDesktop/\(PetYRuntimeVersion)", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let error {
+                    if !silent {
+                        self.panel.setStatus("检查更新失败")
+                        self.log("检查更新失败：\(error.localizedDescription)")
+                    }
+                    return
+                }
+                guard let http = response as? HTTPURLResponse, http.statusCode < 400, let data else {
+                    if !silent {
+                        self.panel.setStatus("检查更新失败")
+                        self.log("检查更新失败：GitHub 暂时不可用。")
+                    }
+                    return
+                }
+                guard let release = try? JSONDecoder().decode(GitHubRelease.self, from: data) else {
+                    if !silent {
+                        self.panel.setStatus("检查更新失败")
+                        self.log("检查更新失败：Release 信息无法读取。")
+                    }
+                    return
+                }
+                let releaseURL = release.html_url.flatMap(URL.init(string:))
+                if self.isVersion(release.tag_name, newerThan: PetYRuntimeVersion) {
+                    self.latestRuntimeReleaseURL = releaseURL
+                    self.panel.setUpdateAvailable(version: release.tag_name, url: releaseURL)
+                    self.panel.setStatus("有新版本 \(release.tag_name)")
+                    self.sayLocal("Pet Y 有新版本啦。")
+                    self.log("发现新 Runtime：\(release.tag_name)")
+                } else if !silent {
+                    self.panel.setUpdateAvailable(version: nil, url: nil)
+                    self.panel.setStatus("已经是最新版本")
+                    self.sayLocal("已经是最新版本。")
+                    self.log("当前 Runtime 已是最新版本。")
+                }
+            }
+        }.resume()
+    }
+
+    private func openRuntimeReleasePage() {
+        let url = latestRuntimeReleaseURL
+            ?? URL(string: "https://github.com/xllinbupt/pet-y-public/releases/latest")!
+        NSWorkspace.shared.open(url)
+    }
+
+    private func isVersion(_ candidate: String, newerThan current: String) -> Bool {
+        let left = versionParts(candidate)
+        let right = versionParts(current)
+        for index in 0..<max(left.count, right.count) {
+            let a = index < left.count ? left[index] : 0
+            let b = index < right.count ? right[index] : 0
+            if a != b { return a > b }
+        }
+        return false
+    }
+
+    private func versionParts(_ version: String) -> [Int] {
+        version
+            .trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+            .split(separator: ".")
+            .map { Int($0) ?? 0 }
     }
 
     private func profileRegistration() -> PetProfileRegistration {
