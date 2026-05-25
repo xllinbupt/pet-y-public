@@ -87,6 +87,9 @@ function loadRelayState() {
     for (const invite of state.invites || []) {
       if (invite?.token && invite?.user_id) invites.set(invite.token, invite);
     }
+    for (const profile of state.profiles || []) {
+      if (profile?.pet_id && profile?.owner_user_id) profiles.set(profile.pet_id, profile);
+    }
   } catch (error) {
     console.error(`Failed to load Relay state: ${error.message}`);
   }
@@ -97,7 +100,8 @@ function saveRelayState() {
     saved_at: new Date().toISOString(),
     users: [...users.values()],
     friendships: [...friendships.values()],
-    invites: [...invites.values()]
+    invites: [...invites.values()],
+    profiles: [...profiles.values()]
   };
   fs.mkdir(path.dirname(relayStatePath), { recursive: true }, (mkdirError) => {
     if (mkdirError) return;
