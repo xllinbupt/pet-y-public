@@ -2874,6 +2874,22 @@ extension NSColor {
     }
 }
 
+func ensureSingleInstance() {
+    let dir = NSHomeDirectory() + "/Library/Application Support/PetY"
+    try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    let lockPath = dir + "/petydesktop.lock"
+    let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
+    guard fd != -1 else { return }
+    if flock(fd, LOCK_EX | LOCK_NB) != 0 {
+        FileHandle.standardError.write(Data("PetYDesktop already running; exiting duplicate.\n".utf8))
+        exit(0)
+    }
+    // Intentionally keep fd open for the process lifetime so the lock is held
+    // until this instance exits; the OS releases it automatically on exit/crash.
+}
+
+ensureSingleInstance()
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
