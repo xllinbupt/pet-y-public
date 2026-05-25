@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.31"
+let PetYRuntimeVersion = "v0.1.32"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -1370,14 +1370,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func registerProfile() {
+    private func registerProfile(completion: ((Bool) -> Void)? = nil) {
         relay.post("api/profiles", body: profileRegistration()) { [weak self] (result: Result<ProfileResponse, Error>) in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let response):
                     self?.log("已注册宠物名片：\(response.profile.name) v\(response.profile.profile_version)")
+                    completion?(true)
                 case .failure(let error):
                     self?.log("注册宠物名片失败：\(error.localizedDescription)")
+                    completion?(false)
                 }
             }
         }
@@ -1594,6 +1596,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sayLocal("我准备去 \(friendName) 那儿。")
         panel.setStatus("\(localPet.name) 准备出门")
         log("正在发起串门：\(friendName)")
+        registerProfile { [weak self] registered in
+            guard let self else { return }
+            guard registered else {
+                self.panel.setStatus("宠物名片还没准备好")
+                self.sayLocal("我名片没准备好。")
+                self.log("串门失败：宠物名片发布失败。")
+                return
+            }
+
         let body = VisitRequest(
             pet_id: localPet.pet_id,
             owner_user_id: userId,
@@ -1622,6 +1633,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.log("发起串门失败：\(error.localizedDescription)")
                 }
             }
+        }
         }
     }
 
