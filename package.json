@@ -6,9 +6,10 @@
   "type": "module",
   "scripts": {
     "build:desktop": "swiftc -module-cache-path .build/module-cache macos-runtime/PetYDesktop.swift -o .build/PetYDesktop -framework AppKit",
-    "check": "node --check server.js && node --check public/runtime.js && node --check scripts/create-pet-life-pack.js",
+    "check": "node --check server.js && node --check public/runtime.js && node --check scripts/create-pet-life-pack.js && node --check scripts/monitor-usage.js",
     "create:pet": "node scripts/create-pet-life-pack.js",
     "install:runtime": "./scripts/install-runtime.sh",
+    "monitor:usage": "node scripts/monitor-usage.js",
     "package:runtime": "./scripts/package-runtime.sh",
     "start": "node server.js",
     "start:public": "./scripts/start-relay-public.sh"
