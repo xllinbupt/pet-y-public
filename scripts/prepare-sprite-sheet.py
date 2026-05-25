@@ -21,20 +21,32 @@ def content_bbox(image: Image.Image):
     return alpha.getbbox()
 
 
-def fit_frame(frame: Image.Image, size: int) -> Image.Image:
-    bbox = content_bbox(frame)
-    output = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    if not bbox:
-        return output
+def fit_frames_stable(frames, size: int):
+    bboxes = [content_bbox(frame) for frame in frames]
+    present = [bbox for bbox in bboxes if bbox]
+    if not present:
+        return [Image.new("RGBA", (size, size), (0, 0, 0, 0)) for _ in frames]
 
-    content = frame.crop(bbox)
-    scale = min((size - 8) / content.width, (size - 8) / content.height)
-    next_size = (max(1, round(content.width * scale)), max(1, round(content.height * scale)))
-    content = content.resize(next_size, Image.Resampling.LANCZOS)
-    x = (size - content.width) // 2
-    y = (size - content.height) // 2
-    output.alpha_composite(content, (x, y))
-    return output
+    max_width = max(bbox[2] - bbox[0] for bbox in present)
+    max_height = max(bbox[3] - bbox[1] for bbox in present)
+    scale = min((size - 8) / max_width, (size - 8) / max_height)
+    baseline = size - 4
+
+    fitted = []
+    for frame, bbox in zip(frames, bboxes):
+        output = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        if not bbox:
+            fitted.append(output)
+            continue
+
+        content = frame.crop(bbox)
+        next_size = (max(1, round(content.width * scale)), max(1, round(content.height * scale)))
+        content = content.resize(next_size, Image.Resampling.LANCZOS)
+        x = (size - content.width) // 2
+        y = baseline - content.height
+        output.alpha_composite(content, (x, y))
+        fitted.append(output)
+    return fitted
 
 
 def main():
@@ -49,12 +61,14 @@ def main():
     source_width, source_height = source.size
     raw_frame_width = source_width / args.frames
 
-    frames = []
+    raw_frames = []
     for index in range(args.frames):
         left = round(index * raw_frame_width)
         right = round((index + 1) * raw_frame_width)
         frame = source.crop((left, 0, right, source_height))
-        frames.append(fit_frame(frame, args.frame_size))
+        raw_frames.append(frame)
+
+    frames = fit_frames_stable(raw_frames, args.frame_size)
 
     output = Image.new("RGBA", (args.frame_size * args.frames, args.frame_size), (0, 0, 0, 0))
     for index, frame in enumerate(frames):

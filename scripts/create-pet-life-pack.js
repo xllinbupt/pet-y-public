@@ -252,6 +252,8 @@ function writeAssetTasks(filePath, pack) {
     "- One horizontal sprite sheet per action.",
     "- Every frame must be 64x64 after processing.",
     "- Keep the same pet identity across all actions.",
+    "- Static states such as idle, rest, and sleep must have a locked camera, stable visual scale, and fixed anchor point. Keep grounded pets on the same foot/body baseline; keep floating pets on the same center point.",
+    "- Do not animate idle/rest/sleep by zooming, resizing, or re-centering the whole pet. Use small part motion instead, such as blinking, tail/ear motion, breathing detail, or glow changes.",
     "- Movement sheets such as move, run, walk, or hop should face right by default; if the approved sheet faces left, set that state's default_facing to left in pet-life.json.",
     "- Use default_facing none for front-facing or directionless states. Do not mix left-facing and right-facing frames in one sheet.",
     "- No text, watermark, shadows, floor, or background props.",

@@ -6,7 +6,7 @@ Pixel art desktop pet dog, 64x64 frame, transparent background, warm yellow body
 
 ## Idle
 
-Horizontal sprite sheet, 4 frames, same pixel dog, standing idle, tail gently wagging, occasional blink, transparent background, 64x64 per frame.
+Horizontal sprite sheet, 4 frames, same pixel dog, standing idle, tail gently wagging, occasional blink, transparent background, 64x64 per frame, locked camera, fixed paw baseline, same body size in every frame, no whole-body zoom or re-centering.
 
 ## Run
 
@@ -14,11 +14,11 @@ Horizontal sprite sheet, 6 frames, same pixel dog, small running loop, ears and 
 
 ## Sit
 
-Horizontal sprite sheet, 3 frames, same pixel dog sitting and looking at the user, tail subtly moving, transparent background, 64x64 per frame.
+Horizontal sprite sheet, 3 frames, same pixel dog sitting and looking at the user, tail subtly moving, transparent background, 64x64 per frame, locked camera, fixed body baseline, same body size in every frame.
 
 ## Sleep
 
-Horizontal sprite sheet, 3 frames, same pixel dog lying down asleep, gentle breathing motion, transparent background, 64x64 per frame.
+Horizontal sprite sheet, 3 frames, same pixel dog lying down asleep, gentle breathing detail, transparent background, 64x64 per frame, locked camera, fixed body baseline, same body size in every frame, no whole-body resize.
 
 ## Carry Ball
 
