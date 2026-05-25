@@ -225,7 +225,9 @@ The native Runtime is currently macOS-only and uses a simple Swift/AppKit implem
 
 The desktop Runtime no longer opens a large control window by default. Runtime controls live in the macOS menu bar under `Pet Y`.
 
-The Relay is in-memory. Restarting the server clears sessions and profiles.
+Runtime checks the latest public GitHub Release at startup and from the `Pet Y` menu bar item. If a newer Runtime exists, the menu shows an update item that opens the Release page.
+
+The Relay keeps live sessions in memory, but user basics, friend links, and invite phrases are persisted to `data/relay-state.json`.
 
 The desktop Runtime persists each pet's local state on the owner's machine. Life logs and memory receipts are stored under:
 
