@@ -9,6 +9,7 @@ Use this preset when the user asks for a pixel-style desktop pet.
 - Limited color palette.
 - Transparent background.
 - Consistent body shape across states.
+- Stable visual scale and anchor point across frames, especially for idle/rest/sleep.
 - Sprite sheet frames arranged horizontally.
 - Every frame in a state uses the same frame width and height.
 - Avoid complex props unless the state explicitly needs one.
@@ -26,8 +27,9 @@ Requirements:
 - Transparent background.
 - Same character identity in every frame.
 - Same frame size in every frame.
+- Locked camera, no per-frame zoom, no per-frame re-centering.
+- For idle/rest/sleep, keep the feet/body baseline fixed for grounded pets, or the center fixed for floating pets.
 - No camera movement.
 - No text.
 - No extra background objects.
 - Leave enough padding so ears/tail/props do not get cropped.
-
