@@ -9,6 +9,7 @@ const publicDir = path.join(__dirname, "public");
 const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || "127.0.0.1";
 const analyticsPath = process.env.PET_Y_ANALYTICS_PATH || path.join(__dirname, "data", "analytics.jsonl");
+const relayStatePath = process.env.PET_Y_STATE_PATH || path.join(__dirname, "data", "relay-state.json");
 const analyticsSalt = process.env.PET_Y_ANALYTICS_SALT || "pet-y-mvp";
 const adminToken = process.env.PET_Y_ADMIN_TOKEN || "";
 
@@ -68,6 +69,41 @@ const visitRequestTimeoutMs = 60_000;
 const counters = new Map();
 const seenUsers = new Set();
 const seenPets = new Set();
+
+function loadRelayState() {
+  if (!fs.existsSync(relayStatePath)) return;
+  try {
+    const state = JSON.parse(fs.readFileSync(relayStatePath, "utf8"));
+    for (const user of state.users || []) {
+      if (!user?.user_id) continue;
+      users.set(user.user_id, {
+        ...user,
+        host_rules: { ...defaultHostRules(), ...(user.host_rules || {}) }
+      });
+    }
+    for (const friendship of state.friendships || []) {
+      if (typeof friendship === "string") friendships.add(friendship);
+    }
+    for (const invite of state.invites || []) {
+      if (invite?.token && invite?.user_id) invites.set(invite.token, invite);
+    }
+  } catch (error) {
+    console.error(`Failed to load Relay state: ${error.message}`);
+  }
+}
+
+function saveRelayState() {
+  const state = {
+    saved_at: new Date().toISOString(),
+    users: [...users.values()],
+    friendships: [...friendships.values()],
+    invites: [...invites.values()]
+  };
+  fs.mkdir(path.dirname(relayStatePath), { recursive: true }, (mkdirError) => {
+    if (mkdirError) return;
+    fs.writeFile(relayStatePath, JSON.stringify(state, null, 2), () => {});
+  });
+}
 
 function countMetric(name, amount = 1) {
   counters.set(name, (counters.get(name) || 0) + amount);
@@ -266,6 +302,8 @@ function ensureUser(userId, displayName = userId) {
   }
   return user;
 }
+
+loadRelayState();
 
 function addFriendship(a, b) {
   friendships.add(friendshipKey(a, b));
@@ -540,6 +578,7 @@ async function handleApi(req, res, url) {
       created_at: new Date().toISOString()
     };
     invites.set(token, invite);
+    saveRelayState();
     return sendJson(res, 200, { invite });
   }
 
@@ -553,6 +592,7 @@ async function handleApi(req, res, url) {
     ensureUser(user_id, user_id);
     ensureUser(invite.user_id, invite.display_name);
     addFriendship(user_id, invite.user_id);
+    saveRelayState();
     recordAnalytics("friend_added", { user_id, host_user_id: invite.user_id });
     emitTo(invite.user_id, "friend_added", {
       friend: friendSummaryFor(invite.user_id, user_id)
@@ -578,6 +618,7 @@ async function handleApi(req, res, url) {
     const owner = ensureUser(nextProfile.owner_user_id, nextProfile.name);
     owner.display_name = nextProfile.name;
     owner.pet_id = nextProfile.pet_id;
+    saveRelayState();
     recordAnalytics("profile_registered", {
       user_id: nextProfile.owner_user_id,
       pet_id: nextProfile.pet_id

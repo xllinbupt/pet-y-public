@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.29"
+let PetYRuntimeVersion = "v0.1.30"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -1147,6 +1147,30 @@ final class ControlPanel: NSObject {
     @objc private func quitTapped() { NSApp.terminate(nil) }
 }
 
+final class PasteFriendlyTextField: NSTextField {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown,
+              event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+              let key = event.charactersIgnoringModifiers?.lowercased() else {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        switch key {
+        case "v":
+            if !NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self),
+               let text = NSPasteboard.general.string(forType: .string) {
+                stringValue += text
+            }
+            return true
+        case "a":
+            _ = NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: self)
+            return true
+        default:
+            return super.performKeyEquivalent(with: event)
+        }
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let userId: String
     let identity: LocalIdentity
@@ -1418,9 +1442,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "添加")
         alert.addButton(withTitle: "取消")
 
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        let input = PasteFriendlyTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
         input.placeholderString = "好友邀请口令"
         alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+        NSApp.activate(ignoringOtherApps: true)
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         acceptInvite(token: input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -1441,11 +1467,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.sayLocal("好友加好了。")
                     self?.log("已添加好友。")
                 case .failure(let error):
-                    self?.sayLocal("加好友失败了。")
+                    let message = self?.acceptInviteFailureMessage(error) ?? "加好友失败了。"
+                    self?.sayLocal(message)
                     self?.log("加好友失败：\(error.localizedDescription)")
                 }
             }
         }
+    }
+
+    private func acceptInviteFailureMessage(_ error: Error) -> String {
+        let text = error.localizedDescription
+        if text.contains("Invite not found") {
+            return "邀请口令失效了，请朋友重新发一个。"
+        }
+        if text.contains("Cannot add yourself") {
+            return "这个是你自己的邀请口令。"
+        }
+        return "加好友失败了。"
     }
 
     private func sendVisit(to friendUserId: String, displayName: String? = nil) {
@@ -2152,9 +2190,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "发送")
         alert.addButton(withTitle: "取消")
 
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        let input = PasteFriendlyTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
         input.placeholderString = "想说的话"
         alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+        NSApp.activate(ignoringOtherApps: true)
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let text = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
