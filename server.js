@@ -340,6 +340,13 @@ function createMemoryReceipt(visit, reason = "departed") {
   const dragged = visit.events.find((event) => event.type === "dragged");
   const fed = visit.events.find((event) => event.type === "fed");
   const messages = visit.events.filter((event) => event.type === "message" && event.data?.text);
+  const messageSummaries = messages.map((event) => ({
+    event_id: event.event_id,
+    text: cleanMessageText(event.data?.text),
+    author_user_id: event.actor?.user_id || visit.host_user_id,
+    author_name: users.get(event.actor?.user_id)?.display_name || host?.display_name || "朋友",
+    created_at: event.created_at
+  }));
   const greeted = visit.events.find((event) => event.type === "pet_to_pet.greeting");
   const satTogether = visit.events.find((event) => event.type === "pet_to_pet.sit_together");
   const playedTogether = visit.events.find((event) => event.type === "pet_to_pet.walk_together");
@@ -387,6 +394,7 @@ function createMemoryReceipt(visit, reason = "departed") {
     source_events: visit.events.map((event) => event.event_id),
     life_log_entry: lifeLogEntry,
     pet_voice: petVoice,
+    messages: messageSummaries,
     relationship_traces: [
       {
         target_user_id: visit.host_user_id,
@@ -645,7 +653,7 @@ async function handleApi(req, res, url) {
 function serveStatic(req, res, url) {
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === "/") pathname = "/index.html";
-  if (pathname === "/alice" || pathname === "/bob") pathname = "/index.html";
+  if (pathname === "/alice" || pathname === "/bob") pathname = "/runtime.html";
 
   const filePath = path.normalize(path.join(publicDir, pathname));
   if (!filePath.startsWith(publicDir)) {
@@ -668,6 +676,8 @@ function serveStatic(req, res, url) {
           ? "text/css; charset=utf-8"
           : ext === ".js"
             ? "text/javascript; charset=utf-8"
+            : ext === ".png"
+              ? "image/png"
             : "application/octet-stream";
     res.writeHead(200, { "content-type": type });
     res.end(data);

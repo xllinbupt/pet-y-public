@@ -2,6 +2,8 @@
 
 This is the current MVP path for testing Pet Y with a real friend.
 
+> Current requirement: every person who wants to run a desktop pet needs a **Mac with macOS**. Windows and Linux are not supported for the desktop Runtime yet.
+
 ## 1. Install The Skill
 
 Public project page:
@@ -61,6 +63,8 @@ The ECS security group must allow inbound TCP `8787`.
 
 ## 4. Run Your Pet
 
+This step must be done on macOS. Pet Y's current desktop Runtime is a native Mac Runtime.
+
 Install the native Runtime, then use the generated life pack:
 
 ```bash
@@ -72,6 +76,8 @@ The Runtime creates a stable local identity automatically.
 Runtime and pet resources are staged under `~/Library/Application Support/PetY`, so the desktop pet does not need broad access to the project folder after launch.
 
 ## 5. Add A Friend
+
+Invite friends who can run Pet Y on a Mac. The friend invite flow assumes the invited friend can launch the macOS Runtime after their Agent creates a pet.
 
 From the macOS menu bar `Pet Y` item:
 

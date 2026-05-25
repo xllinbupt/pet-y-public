@@ -1,0 +1,9 @@
+.build
+dist
+node_modules
+data
+life-packs
+macos-runtime
+pet-y-skill
+scripts
+skill-presets

@@ -4,9 +4,13 @@ Pet Y is an early concept for agent-generated social desktop pets.
 
 The project explores a desktop pet that is created and customized through an Agent, lives locally on the user's desktop, and can truly visit friends' desktops through a lightweight relay and open protocol.
 
+> Current desktop support: **macOS only**. Pet Y's native desktop Runtime is built with Swift/AppKit for Mac. Windows and Linux can host or run the Relay, but they cannot run the desktop pet Runtime yet.
+
 ## 中文简介
 
 Pet Y 不是一只固定的桌面宠物，而是一套让 Agent 帮用户“创造宠物生命”的流程。
+
+> 当前桌面端暂时只支持 **macOS / Mac 电脑**。Windows 和 Linux 可以运行 Relay 等服务，但还不能运行桌面宠物 Runtime。
 
 当前原型已经能跑通一个真实社交闭环：
 
@@ -63,6 +67,8 @@ It includes:
 The included Momo and Yuzu pets are sample life packs, not the final product. The product is the Skill-driven creation flow that generates life packs for Runtime.
 
 ## Run
+
+Desktop pet Runtime currently requires a Mac. Use macOS for all steps that launch `./scripts/run-desktop.sh`.
 
 Start the Relay:
 
@@ -131,7 +137,7 @@ The MVP now has a lightweight invite flow instead of a full account system.
 From the `Pet Y` menu bar item:
 
 - Choose `邀请好友一起玩` to copy a complete share message with setup instructions, Relay URL, and your friend invite phrase.
-- Give that message to another Runtime user.
+- Give that message to a friend using a Mac. The invited friend also needs macOS to run their own desktop pet.
 - The other user gives the message to an Agent. Codex is preferred for this MVP because it can help generate pet images.
 - The Agent should create and approve the pet image first, run the pet locally, then bind the friend relationship with `./scripts/accept-friend-invite.sh`.
 - The inviter receives a local reminder after the friend is added.
@@ -147,7 +153,7 @@ The current target flow is:
 1. Install the project-local Pet Y Skill.
 2. Start a shared Relay.
 3. Each friend uses an Agent with this project and the Pet Y Skill to create their own Pet Life Pack through an interview. Codex is preferred for image generation in the current MVP.
-4. Each friend runs their own desktop Runtime against the same Relay.
+4. Each friend runs their own desktop Runtime against the same Relay on macOS.
 5. Friends use `邀请好友一起玩` from the menu bar item, or the pet-side `邀请好友一起玩` quick action.
 6. After both pets are online, click the pet, choose `串门`, and select the online friend.
 
