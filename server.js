@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || "127.0.0.1";
+const relayOnly = process.env.PET_Y_RELAY_ONLY === "1";
 const analyticsPath = process.env.PET_Y_ANALYTICS_PATH || path.join(__dirname, "data", "analytics.jsonl");
 const relayStatePath = process.env.PET_Y_STATE_PATH || path.join(__dirname, "data", "relay-state.json");
 const analyticsSalt = process.env.PET_Y_ANALYTICS_SALT || "pet-y-mvp";
@@ -60,11 +61,12 @@ const friendships = new Set(["alice:bob", "bob:alice"]);
 const profiles = new Map();
 const visits = new Map();
 const invites = new Map();
+const visitInvitations = new Map();
 const eventStreams = new Map();
 const eventMailboxes = new Map();
 const runtimePresence = new Map();
 let eventSequence = 0;
-const onlineTimeoutMs = 6_000;
+const onlineTimeoutMs = 60_000;
 const visitRequestTimeoutMs = 60_000;
 const counters = new Map();
 const seenUsers = new Set();
@@ -286,6 +288,7 @@ function defaultHostRules() {
     allow_gifts_to_return: true,
     max_visit_minutes: 10,
     movement_policy: "free_roam",
+    do_not_disturb_until: null,
     blocked_pet_ids: [],
     muted_pet_ids: []
   };
@@ -375,6 +378,63 @@ function safePetProfile(profile) {
 
 function cleanMessageText(text) {
   return String(text || "").trim().slice(0, 500);
+}
+
+function isDoNotDisturb(user) {
+  const until = user?.host_rules?.do_not_disturb_until;
+  return Boolean(until && Date.now() < new Date(until).getTime());
+}
+
+function doNotDisturbMessage(user) {
+  return `${user?.display_name || "这个宠物"}正在睡觉呢。`;
+}
+
+function activeVisitFor(petId, ownerUserId, hostUserId) {
+  return [...visits.values()].find((visit) =>
+    visit.pet_id === petId &&
+    visit.owner_user_id === ownerUserId &&
+    visit.host_user_id === hostUserId &&
+    ["pending", "active"].includes(visit.status)
+  );
+}
+
+function ownerProfileFor(userId) {
+  return [...profiles.values()].find((profile) => profile.owner_user_id === userId) || null;
+}
+
+function createVisit({ pet_id, owner_user_id, host_user_id, departure_context = {}, status = "pending" }) {
+  const profile = profiles.get(pet_id);
+  const host = users.get(host_user_id);
+  const now = Date.now();
+  const visit = {
+    visit_id: `visit_${now}`,
+    pet_id,
+    owner_user_id,
+    host_user_id,
+    profile_version: profile.profile_version,
+    status,
+    departure_context,
+    requested_at: new Date(now).toISOString(),
+    request_expires_at: new Date(now + visitRequestTimeoutMs).toISOString(),
+    started_at: status === "active" ? new Date(now).toISOString() : null,
+    expires_at: new Date(now + host.host_rules.max_visit_minutes * 60_000).toISOString(),
+    events: []
+  };
+  visits.set(visit.visit_id, visit);
+  return visit;
+}
+
+function emitVisitStarted(visit, profile) {
+  const safeProfile = safePetProfile(profile);
+  const payload = {
+    visit,
+    profile: safeProfile,
+    animation_states: profile.animation_states || null,
+    asset_blobs: profile.asset_blobs || {},
+    host_rules: users.get(visit.host_user_id)?.host_rules || defaultHostRules()
+  };
+  emitTo(visit.host_user_id, "visit_started", payload);
+  emitTo(visit.owner_user_id, "visit_status", visit);
 }
 
 function createMemoryReceipt(visit, reason = "departed") {
@@ -607,6 +667,105 @@ async function handleApi(req, res, url) {
     });
   }
 
+  const dndMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/do-not-disturb$/);
+  if (req.method === "POST" && dndMatch) {
+    const user = users.get(dndMatch[1]);
+    if (!user) return sendJson(res, 404, { error: "Unknown user" });
+    const body = await readBody(req);
+    if (body.user_id !== user.user_id) return sendJson(res, 403, { error: "Only the user can update do-not-disturb" });
+    user.host_rules.do_not_disturb_until = body.until || null;
+    saveRelayState();
+    recordAnalytics("do_not_disturb_updated", {
+      user_id: user.user_id,
+      reason: user.host_rules.do_not_disturb_until ? "enabled" : "disabled"
+    });
+    return sendJson(res, 200, {
+      user_id: user.user_id,
+      do_not_disturb_until: user.host_rules.do_not_disturb_until
+    });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/visit-invitations") {
+    const body = await readBody(req);
+    const { requester_user_id, owner_user_id } = body;
+    const requester = users.get(requester_user_id);
+    const owner = users.get(owner_user_id);
+    const profile = ownerProfileFor(owner_user_id);
+    if (!requester_user_id || !owner_user_id) return sendJson(res, 400, { error: "requester_user_id and owner_user_id are required" });
+    if (!requester || !owner) return sendJson(res, 404, { error: "User not found" });
+    if (!areFriends(requester_user_id, owner_user_id)) return sendJson(res, 403, { error: "Users are not friends" });
+    if (!profile) return sendJson(res, 400, { error: "Friend pet must publish PetProfile before visiting" });
+    if (!isUserOnline(owner_user_id)) return sendJson(res, 409, { error: "Friend Runtime is offline" });
+    if (isDoNotDisturb(owner)) return sendJson(res, 409, { error: doNotDisturbMessage(owner) });
+
+    const existing = activeVisitFor(profile.pet_id, owner_user_id, requester_user_id);
+    if (existing) return sendJson(res, 200, { invitation: null, visit: existing });
+
+    const requestId = `invite_visit_${Date.now()}`;
+    const invitation = {
+      request_id: requestId,
+      requester_user_id,
+      owner_user_id,
+      pet_id: profile.pet_id,
+      status: "pending",
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + visitRequestTimeoutMs).toISOString()
+    };
+    visitInvitations.set(requestId, invitation);
+    recordAnalytics("visit_invitation_requested", { user_id: requester_user_id, owner_user_id, pet_id: profile.pet_id });
+    emitTo(owner_user_id, "visit_invitation_requested", {
+      invitation,
+      requester: friendSummaryFor(owner_user_id, requester_user_id) || requester,
+      profile: safePetProfile(profile)
+    });
+    return sendJson(res, 201, { invitation });
+  }
+
+  const invitationDecisionMatch = url.pathname.match(/^\/api\/visit-invitations\/([^/]+)\/decision$/);
+  if (req.method === "POST" && invitationDecisionMatch) {
+    const invitation = visitInvitations.get(invitationDecisionMatch[1]);
+    if (!invitation) return sendJson(res, 404, { error: "Visit invitation not found" });
+    const body = await readBody(req);
+    if (body.user_id !== invitation.owner_user_id) return sendJson(res, 403, { error: "Only the pet owner can answer the invitation" });
+    if (invitation.status !== "pending") return sendJson(res, 409, { error: "Visit invitation is no longer pending", invitation });
+    const owner = users.get(invitation.owner_user_id);
+    const requester = users.get(invitation.requester_user_id);
+    const profile = profiles.get(invitation.pet_id);
+    if (!owner || !requester || !profile) return sendJson(res, 409, { error: "Visit invitation cannot start now" });
+
+    if (body.action === "decline") {
+      invitation.status = "declined";
+      invitation.ended_at = new Date().toISOString();
+      emitTo(invitation.requester_user_id, "visit_invitation_status", invitation);
+      return sendJson(res, 200, { invitation, visit: null });
+    }
+    if (body.action !== "accept") return sendJson(res, 400, { error: "action must be accept or decline" });
+    if (!isUserOnline(invitation.requester_user_id)) return sendJson(res, 409, { error: "Requester Runtime is offline" });
+    if (isDoNotDisturb(requester)) return sendJson(res, 409, { error: doNotDisturbMessage(requester) });
+
+    const existing = activeVisitFor(invitation.pet_id, invitation.owner_user_id, invitation.requester_user_id);
+    const visit = existing || createVisit({
+      pet_id: invitation.pet_id,
+      owner_user_id: invitation.owner_user_id,
+      host_user_id: invitation.requester_user_id,
+      departure_context: { mood: "invited", intent: "play" },
+      status: "active"
+    });
+    invitation.status = "accepted";
+    invitation.visit_id = visit.visit_id;
+    invitation.ended_at = new Date().toISOString();
+    if (!existing) {
+      recordAnalytics("visit_started", {
+        owner_user_id: visit.owner_user_id,
+        host_user_id: visit.host_user_id,
+        pet_id: visit.pet_id
+      });
+      emitVisitStarted(visit, profile);
+    }
+    emitTo(invitation.requester_user_id, "visit_invitation_status", invitation);
+    return sendJson(res, 200, { invitation, visit });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/profiles") {
     const profile = await readBody(req);
     if (!profile.pet_id || !profile.owner_user_id) {
@@ -642,25 +801,13 @@ async function handleApi(req, res, url) {
     if (profile.owner_user_id !== owner_user_id) return sendJson(res, 403, { error: "Profile owner mismatch" });
     if (!areFriends(owner_user_id, host_user_id)) return sendJson(res, 403, { error: "Users are not friends" });
     if (!isUserOnline(host_user_id)) return sendJson(res, 409, { error: "Host Runtime is offline" });
+    if (isDoNotDisturb(host)) return sendJson(res, 409, { error: doNotDisturbMessage(host) });
     if (host.host_rules.blocked_pet_ids.includes(pet_id)) return sendJson(res, 403, { error: "Pet is blocked by host" });
 
-    const now = Date.now();
-    const visit = {
-      visit_id: `visit_${now}`,
-      pet_id,
-      owner_user_id,
-      host_user_id,
-      profile_version: profile.profile_version,
-      status: "pending",
-      departure_context,
-      requested_at: new Date(now).toISOString(),
-      request_expires_at: new Date(now + visitRequestTimeoutMs).toISOString(),
-      started_at: null,
-      expires_at: new Date(now + host.host_rules.max_visit_minutes * 60_000).toISOString(),
-      events: []
-    };
+    const existing = activeVisitFor(pet_id, owner_user_id, host_user_id);
+    if (existing) return sendJson(res, 200, { visit: existing });
 
-    visits.set(visit.visit_id, visit);
+    const visit = createVisit({ pet_id, owner_user_id, host_user_id, departure_context });
     recordAnalytics("visit_requested", { owner_user_id, host_user_id, pet_id });
     emitTo(host_user_id, "visit_requested", {
       visit,
@@ -699,6 +846,7 @@ async function handleApi(req, res, url) {
     const host = users.get(visit.host_user_id);
     if (!profile || !host) return sendJson(res, 409, { error: "Visit cannot start now" });
     if (!isUserOnline(visit.host_user_id)) return sendJson(res, 409, { error: "Host Runtime is offline" });
+    if (isDoNotDisturb(host)) return sendJson(res, 409, { error: doNotDisturbMessage(host) });
 
     const now = Date.now();
     visit.status = "active";
@@ -709,14 +857,7 @@ async function handleApi(req, res, url) {
       host_user_id: visit.host_user_id,
       pet_id: visit.pet_id
     });
-    emitTo(visit.host_user_id, "visit_started", {
-      visit,
-      profile: safePetProfile(profile),
-      animation_states: profile.animation_states || null,
-      asset_blobs: profile.asset_blobs || {},
-      host_rules: host.host_rules
-    });
-    emitTo(visit.owner_user_id, "visit_status", visit);
+    emitVisitStarted(visit, profile);
     return sendJson(res, 200, { visit });
   }
 
@@ -777,6 +918,18 @@ async function handleApi(req, res, url) {
 }
 
 function serveStatic(req, res, url) {
+  if (relayOnly) {
+    if (url.pathname === "/") {
+      return sendJson(res, 200, {
+        service: "Pet Y Relay",
+        ok: true,
+        website: "https://pet-y.vercel.app",
+        health: "/api/health"
+      });
+    }
+    return sendJson(res, 404, { error: "Relay-only mode does not serve public pages" });
+  }
+
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === "/") pathname = "/index.html";
   if (pathname === "/alice" || pathname === "/bob") pathname = "/runtime.html";
