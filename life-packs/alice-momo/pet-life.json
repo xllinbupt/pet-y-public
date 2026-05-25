@@ -7,7 +7,7 @@
     "protocol_version": "0.1",
     "name": "Momo",
     "style": "pixel",
-    "preview": "#6bc6a8",
+    "preview": "#f3d27a",
     "personality_card": "慢热但好奇，喜欢被轻轻拖到新的观察点。",
     "projection_capabilities": [
       "idle",
@@ -85,12 +85,12 @@
     }
   },
   "asset_prompts": {
-    "style_prompt": "像素风桌面宠物，透明背景，清晰轮廓，有限色板，64x64 单帧规格。",
+    "style_prompt": "像素风浅黄色长耳朵小狗桌面宠物，透明背景，清晰轮廓，有限色板，64x64 单帧规格。",
     "state_prompts": {
-      "idle": "同一只 Momo 的 4 帧横向 sprite sheet，站着发呆，轻微呼吸感，透明背景。",
-      "run": "同一只 Momo 的 6 帧横向 sprite sheet，小跑动作，透明背景。",
-      "sleep": "同一只 Momo 的 3 帧横向 sprite sheet，趴着睡觉，轻微呼吸感，透明背景。",
-      "carry_ball": "同一只 Momo 的 6 帧横向 sprite sheet，叼着皮球走来，透明背景。"
+      "idle": "同一只浅黄色长耳朵 Momo 的 4 帧横向 sprite sheet，站着发呆，轻微呼吸感，透明背景。",
+      "run": "同一只浅黄色长耳朵 Momo 的 6 帧横向 sprite sheet，小跑动作，透明背景。",
+      "sleep": "同一只浅黄色长耳朵 Momo 的 3 帧横向 sprite sheet，趴着睡觉，轻微呼吸感，透明背景。",
+      "carry_ball": "同一只浅黄色长耳朵 Momo 的 6 帧横向 sprite sheet，叼着皮球走来，透明背景。"
     }
   },
   "behavior": {

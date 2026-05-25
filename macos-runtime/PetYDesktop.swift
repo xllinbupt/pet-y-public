@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.24"
+let PetYRuntimeVersion = "v0.1.25"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -105,6 +105,15 @@ struct MemoryReceipt: Codable {
     let pet_id: String
     let life_log_entry: String
     let pet_voice: String
+    let messages: [VisitMessage]?
+}
+
+struct VisitMessage: Codable {
+    let event_id: String?
+    let text: String
+    let author_user_id: String?
+    let author_name: String?
+    let created_at: String?
 }
 
 struct LifeLogEntry: Codable {
@@ -1134,6 +1143,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var visitorWindow: PetWindow?
     var ballWindow: BallWindow?
     var interactionMenuWindow: InteractionMenuWindow?
+    weak var interactionMenuAnchorWindow: PetWindow?
+    var interactionMenuFollowTimer: Timer?
     var visitorVisit: VisitSession?
     var outgoingVisit: VisitSession?
     var friends: [FriendStatus] = []
@@ -1555,6 +1566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 remember(receipt.life_log_entry)
                 remember(receipt.pet_voice)
                 rememberMemory(receipt)
+                showReturnedMessagesIfNeeded(receipt)
             }
         default:
             break
@@ -1723,7 +1735,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.putLocalPetToSleep()
             }
         )
-        interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: localWindow.frame, actions: actions), actions: actions)
+        showInteractionMenu(anchor: localWindow, actions: actions)
     }
 
     private func showFriendActions() {
@@ -1766,7 +1778,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             sayLocal("想去谁家串门？")
         }
-        interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: localWindow.frame, actions: actions), actions: actions)
+        showInteractionMenu(anchor: localWindow, actions: actions)
     }
 
     private func showVisitorInteractionMenu() {
@@ -1821,7 +1833,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             visitorView.say("我还不知道怎么和你互动。")
             return
         }
-        interactionMenuWindow = InteractionMenuWindow(origin: menuOrigin(for: visitorWindow.frame, actions: actions), actions: actions)
+        showInteractionMenu(anchor: visitorWindow, actions: actions)
     }
 
     private func visitorInteractionCapabilities(for profile: PetProfile) -> Set<String> {
@@ -1839,10 +1851,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func menuOrigin(for petFrame: NSRect, actions: [PetAction]) -> CGPoint {
         let width = InteractionMenuView.menuWidth(for: InteractionMenuView.buttonWidths(for: actions))
-        return CGPoint(x: petFrame.midX - width / 2, y: petFrame.minY - 52)
+        return menuOrigin(for: petFrame, menuWidth: width)
+    }
+
+    private func menuOrigin(for petFrame: NSRect, menuWidth: CGFloat) -> CGPoint {
+        CGPoint(x: petFrame.midX - menuWidth / 2, y: petFrame.minY - 52)
+    }
+
+    private func showInteractionMenu(anchor: PetWindow, actions: [PetAction]) {
+        closeInteractionMenu()
+        let menu = InteractionMenuWindow(origin: menuOrigin(for: anchor.frame, actions: actions), actions: actions)
+        interactionMenuWindow = menu
+        interactionMenuAnchorWindow = anchor
+        startInteractionMenuFollowTimer()
+    }
+
+    private func startInteractionMenuFollowTimer() {
+        interactionMenuFollowTimer?.invalidate()
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self,
+                  let menu = self.interactionMenuWindow,
+                  let anchor = self.interactionMenuAnchorWindow,
+                  anchor.isVisible else {
+                self?.closeInteractionMenu()
+                return
+            }
+            let origin = self.menuOrigin(for: anchor.frame, menuWidth: menu.frame.width)
+            if abs(menu.frame.origin.x - origin.x) > 0.5 || abs(menu.frame.origin.y - origin.y) > 0.5 {
+                menu.setFrameOrigin(origin)
+            }
+        }
+        interactionMenuFollowTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func closeInteractionMenu() {
+        interactionMenuFollowTimer?.invalidate()
+        interactionMenuFollowTimer = nil
+        interactionMenuAnchorWindow = nil
         interactionMenuWindow?.close()
         interactionMenuWindow = nil
     }
@@ -1927,6 +1973,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         onSubmit(String(text.prefix(500)))
+    }
+
+    private func showReturnedMessagesIfNeeded(_ receipt: MemoryReceipt) {
+        let messages = receipt.messages?.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? []
+        guard !messages.isEmpty else { return }
+
+        let body = messages
+            .prefix(8)
+            .enumerated()
+            .map { index, message in
+                let author = message.author_name?.isEmpty == false ? message.author_name! : "朋友"
+                return "\(index + 1). \(author)：\(message.text)"
+            }
+            .joined(separator: "\n\n")
+
+        let alert = NSAlert()
+        alert.icon = NSImage(systemSymbolName: "text.bubble.fill", accessibilityDescription: "留言")
+        alert.messageText = "\(localPet.name) 带回了留言"
+        alert.informativeText = body
+        alert.addButton(withTitle: "关闭")
+        alert.runModal()
+
+        log("\(localPet.name) 带回 \(messages.count) 条留言。")
     }
 
     private func greetVisitorWithLocalPet() {

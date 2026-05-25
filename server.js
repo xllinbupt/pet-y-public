@@ -340,6 +340,13 @@ function createMemoryReceipt(visit, reason = "departed") {
   const dragged = visit.events.find((event) => event.type === "dragged");
   const fed = visit.events.find((event) => event.type === "fed");
   const messages = visit.events.filter((event) => event.type === "message" && event.data?.text);
+  const messageSummaries = messages.map((event) => ({
+    event_id: event.event_id,
+    text: cleanMessageText(event.data?.text),
+    author_user_id: event.actor?.user_id || visit.host_user_id,
+    author_name: users.get(event.actor?.user_id)?.display_name || host?.display_name || "朋友",
+    created_at: event.created_at
+  }));
   const greeted = visit.events.find((event) => event.type === "pet_to_pet.greeting");
   const satTogether = visit.events.find((event) => event.type === "pet_to_pet.sit_together");
   const playedTogether = visit.events.find((event) => event.type === "pet_to_pet.walk_together");
@@ -387,6 +394,7 @@ function createMemoryReceipt(visit, reason = "departed") {
     source_events: visit.events.map((event) => event.event_id),
     life_log_entry: lifeLogEntry,
     pet_voice: petVoice,
+    messages: messageSummaries,
     relationship_traces: [
       {
         target_user_id: visit.host_user_id,
