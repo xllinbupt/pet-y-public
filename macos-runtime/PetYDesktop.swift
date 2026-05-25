@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.27"
+let PetYRuntimeVersion = "v0.1.28"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -1708,10 +1708,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let response): self?.log("记录互动事件：\(response.event.type)")
-                case .failure(let error): self?.log("互动事件上传失败：\(error.localizedDescription)")
+                case .failure(let error):
+                    if self?.isLostVisitError(error) == true {
+                        self?.handleLostVisitorVisit()
+                    } else {
+                        self?.log("互动事件上传失败：\(error.localizedDescription)")
+                    }
                 }
             }
         }
+    }
+
+    private func isLostVisitError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        let text = error.localizedDescription
+        return (nsError.code == 404 && text.contains("Visit not found"))
+            || (nsError.code == 409 && text.contains("Visit is not active"))
+    }
+
+    private func handleLostVisitorVisit() {
+        guard visitorVisit != nil || visitorWindow != nil else { return }
+        log("来访会话已经失效，已清理本地来访宠物。")
+        removeVisitor()
+    }
+
+    private func handleLostOutgoingVisit() {
+        guard outgoingVisit != nil || awaySignWindow != nil else { return }
+        log("出门会话已经失效，已让本地宠物回家。")
+        restoreLocalPet()
+        panel.setStatus("\(localPet.name) 回家了")
     }
 
     private func feedVisitor() {
@@ -1738,7 +1763,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.removeVisitor()
                     self?.log("已送小客人回家。")
                 case .failure(let error):
-                    self?.log("送小客人回家失败：\(error.localizedDescription)")
+                    if self?.isLostVisitError(error) == true {
+                        self?.handleLostVisitorVisit()
+                    } else {
+                        self?.log("送小客人回家失败：\(error.localizedDescription)")
+                    }
                 }
             }
         }
@@ -1766,7 +1795,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self?.log("已喊宠物回家。")
                     }
                 case .failure(let error):
-                    self?.log("喊宠物回家失败：\(error.localizedDescription)")
+                    if self?.isLostVisitError(error) == true {
+                        self?.handleLostOutgoingVisit()
+                    } else {
+                        self?.log("喊宠物回家失败：\(error.localizedDescription)")
+                    }
                 }
             }
         }
