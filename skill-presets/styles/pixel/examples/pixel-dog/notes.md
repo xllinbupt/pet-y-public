@@ -13,7 +13,7 @@ Important reusable decisions:
 
 - Use sprite sheet PNG, not animated PNG.
 - Keep every state at 64x64 per frame.
-- Keep the dog shape consistent across all states.
+- Keep the dog shape and apparent body size consistent across all states; do not let one action fill the frame while another makes the dog tiny.
 - Props such as the ball appear only in the relevant state.
 - The pet can carry a ball as a returned-gift animation.
 - Fetch-ball is a full sequence, not a single pose: throw the ball far away, run to it while scaling down, pick it up, carry it back while scaling up, then sit.

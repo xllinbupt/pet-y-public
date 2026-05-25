@@ -302,6 +302,8 @@ The Skill should generate both the pet's identity and its action states. A dog m
 
 New life packs should prefer generic Runtime action names: `idle`, `move`, `rest`, `sleep`, and `signature_xxx`. The native Runtime resolves these intent-level actions and still supports older Momo-style states like `run`, `sit`, and `carry_ball` as fallbacks.
 
+Generated sprite sheets must keep the pet's apparent body size consistent across action states. Matching `64x64` frame dimensions is not enough if the running pet is huge and the sleeping pet is tiny. Use Runtime transforms for distance or dramatic scale changes instead of baking different scales into the artwork.
+
 The current Runtime plays `animation_states.idle` when the life pack has an `assets/idle.png` sprite sheet. If the asset is missing, it falls back to the built-in drawn pet.
 
 Directional animation states can declare `default_facing`: `right`, `left`, or `none`. Missing values default to `right` for backward compatibility. Use `none` for front-facing or directionless states, and keep every frame in a sprite sheet facing the same way.

@@ -10,7 +10,7 @@ Horizontal sprite sheet, 4 frames, same pixel dog, standing idle, tail gently wa
 
 ## Run
 
-Horizontal sprite sheet, 6 frames, same pixel dog, small running loop, ears and tail bouncing, transparent background, 64x64 per frame.
+Horizontal sprite sheet, 6 frames, same pixel dog, small running loop, ears and tail bouncing, transparent background, 64x64 per frame, same apparent body size as the approved idle dog.
 
 ## Sit
 
@@ -22,7 +22,7 @@ Horizontal sprite sheet, 3 frames, same pixel dog lying down asleep, gentle brea
 
 ## Carry Ball
 
-Horizontal sprite sheet, 6 frames, same pixel dog trotting while holding a small red ball in its mouth, transparent background, 64x64 per frame.
+Horizontal sprite sheet, 6 frames, same pixel dog trotting while holding a small red ball in its mouth, transparent background, 64x64 per frame, same apparent body size as the approved idle dog.
 
 ## Fetch Ball Sequence
 

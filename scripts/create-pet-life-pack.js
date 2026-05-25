@@ -69,7 +69,7 @@ const lifePack = {
   },
   animation_states: animationStates,
   asset_prompts: {
-    style_prompt: `${styleLabel(style)}${form}桌面宠物，64x64 单帧规格，透明背景，清晰轮廓，有限色板，动作帧一致。`,
+    style_prompt: `${styleLabel(style)}${form}桌面宠物，64x64 单帧规格，透明背景，清晰轮廓，有限色板，动作帧一致，不同动作状态里的主体视觉尺寸保持一致。`,
     state_prompts: statePrompts
   },
   behavior: {
@@ -148,28 +148,28 @@ function buildAnimationStates(signatureState) {
 function buildStatePrompts(style, form, signature, signatureState) {
   const label = `${styleLabel(style)}${form}`;
   return {
-    idle: `同一只${label}的 4 帧横向 sprite sheet，待机状态，轻微呼吸感或小幅摆动，透明背景。`,
-    move: `同一只${label}的 6 帧横向 sprite sheet，移动动作，角色身份保持一致，透明背景。`,
-    rest: `同一只${label}的 3 帧横向 sprite sheet，安静停留或坐下，看向用户，透明背景。`,
-    sleep: `同一只${label}的 3 帧横向 sprite sheet，休息或睡觉状态，轻微呼吸感，透明背景。`,
+    idle: `同一只${label}的 4 帧横向 sprite sheet，待机状态，轻微呼吸感或小幅摆动，透明背景，主体视觉尺寸和锚点稳定。`,
+    move: `同一只${label}的 6 帧横向 sprite sheet，移动动作，角色身份保持一致，透明背景，主体视觉尺寸与待机参考一致。`,
+    rest: `同一只${label}的 3 帧横向 sprite sheet，安静停留或坐下，看向用户，透明背景，主体视觉尺寸与待机参考一致。`,
+    sleep: `同一只${label}的 3 帧横向 sprite sheet，休息或睡觉状态，轻微呼吸感，透明背景，主体视觉尺寸与待机参考一致。`,
     [signatureState]: signaturePrompt(label, signature)
   };
 }
 
 function signaturePrompt(label, signature) {
   if (signature === "fetch_ball") {
-    return `同一只${label}的 6 帧横向 sprite sheet，带着或叼着红色皮球回到用户面前，透明背景。`;
+    return `同一只${label}的 6 帧横向 sprite sheet，带着或叼着红色皮球回到用户面前，透明背景，主体视觉尺寸与待机参考一致。`;
   }
   if (signature === "dance") {
-    return `同一只${label}的 6 帧横向 sprite sheet，小幅跳舞或开心摆动，透明背景。`;
+    return `同一只${label}的 6 帧横向 sprite sheet，小幅跳舞或开心摆动，透明背景，主体视觉尺寸与待机参考一致。`;
   }
   if (signature === "glow") {
-    return `同一只${label}的 6 帧横向 sprite sheet，身体轻轻发光或闪烁，透明背景。`;
+    return `同一只${label}的 6 帧横向 sprite sheet，身体轻轻发光或闪烁，透明背景，主体视觉尺寸与待机参考一致。`;
   }
   if (signature === "hide") {
-    return `同一只${label}的 6 帧横向 sprite sheet，害羞地躲起来又探头，透明背景。`;
+    return `同一只${label}的 6 帧横向 sprite sheet，害羞地躲起来又探头，透明背景，主体视觉尺寸与待机参考一致。`;
   }
-  return `同一只${label}的 6 帧横向 sprite sheet，表现一个独特但克制的招牌互动动作，透明背景。`;
+  return `同一只${label}的 6 帧横向 sprite sheet，表现一个独特但克制的招牌互动动作，透明背景，主体视觉尺寸与待机参考一致。`;
 }
 
 function buildInteractions(signature, signatureState) {
@@ -251,9 +251,11 @@ function writeAssetTasks(filePath, pack) {
     "- Transparent background, or flat chroma-key background for local background removal.",
     "- One horizontal sprite sheet per action.",
     "- Every frame must be 64x64 after processing.",
+    "- Identical canvas size is not enough: keep the pet's apparent body size consistent across idle, move, rest, sleep, and signature states. Do not let one action fill the frame while another action makes the pet tiny.",
     "- Keep the same pet identity across all actions.",
     "- Static states such as idle, rest, and sleep must have a locked camera, stable visual scale, and fixed anchor point. Keep grounded pets on the same foot/body baseline; keep floating pets on the same center point.",
     "- Do not animate idle/rest/sleep by zooming, resizing, or re-centering the whole pet. Use small part motion instead, such as blinking, tail/ear motion, breathing detail, or glow changes.",
+    "- If an interaction needs distance or scale change, describe it as a Runtime transform in behavior.interactions instead of baking different pet scales into the sprite sheet.",
     "- Movement sheets such as move, run, walk, or hop should face right by default; if the approved sheet faces left, set that state's default_facing to left in pet-life.json.",
     "- Use default_facing none for front-facing or directionless states. Do not mix left-facing and right-facing frames in one sheet.",
     "- No text, watermark, shadows, floor, or background props.",
@@ -280,6 +282,8 @@ function writeAssetTasks(filePath, pack) {
   lines.push("- Character still looks like the approved reference.");
   lines.push("- Motion reads clearly at desktop pet scale.");
   lines.push("- Sheet dimensions match `frames * 64` by `64` after processing.");
+  lines.push("- The pet's apparent body size stays consistent across action states, even when the pose changes.");
+  lines.push("- Static states do not jitter, resize, or drift.");
   lines.push("- Corners are transparent.");
   lines.push("- User approves the look before promoting the result as a reusable Skill example.");
   lines.push("");
