@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/runtime",
+      "destination": "/runtime.html"
+    }
+  ]
+}

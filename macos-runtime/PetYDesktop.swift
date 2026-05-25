@@ -1353,6 +1353,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return """
         我在玩 Pet Y，一个可以让桌面宠物去朋友电脑上串门的小实验。
 
+        先提醒一下：当前 Pet Y 桌面宠物暂时只支持 Mac / macOS。Windows 和 Linux 现在还不能运行桌面宠物 Runtime。
+
         我的宠物叫 \(localPet.name)，它想认识你未来创建的宠物。
 
         公开说明在这里：
@@ -1360,7 +1362,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         你可以把下面这段话发给你的 Agent。优先用 Codex，因为它可以直接帮你生成宠物图像：
 
-        请根据 https://github.com/xllinbupt/pet-y-public 的说明，先安装和准备 Pet Y 项目，并从公开 Release 下载最新的预编译 Pet Y Runtime。这个过程可能需要一点时间，不需要让我处理 Xcode、Swift 或 macOS SDK 编译问题。启动后菜单顶部应该能看到 Runtime 版本号。
+        请先确认我正在使用 Mac 电脑。然后根据 https://github.com/xllinbupt/pet-y-public 的说明，安装和准备 Pet Y 项目，并从公开 Release 下载最新的预编译 Pet Y Runtime。这个过程可能需要一点时间，不需要让我处理 Xcode、Swift 或 macOS SDK 编译问题。启动后菜单顶部应该能看到 Runtime 版本号。
 
         然后请访谈我，帮我创建一只属于我自己的桌面宠物。请问我宠物的名字、风格、外形、性格、动作、行为和它喜欢怎样陪伴我，不要直接运行邀请人的小狗。
 

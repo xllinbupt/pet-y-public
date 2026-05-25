@@ -3,71 +3,185 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pet Y MVP Runtime</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <meta
+      name="description"
+      content="Pet Y 是一套由 Agent 生成、能在好友桌面真实串门的社交桌面宠物系统。"
+    />
+    <title>Pet Y - Agent 生成的社交桌面宠物</title>
+    <link rel="stylesheet" href="/site.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <aside class="side-panel">
-        <div>
-          <p class="eyebrow">Pet Y MVP</p>
-          <h1 id="runtime-title">Runtime</h1>
-        </div>
+    <header class="site-header" aria-label="主导航">
+      <a class="brand" href="/" aria-label="Pet Y 首页">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>Pet Y</span>
+      </a>
+      <nav>
+        <a href="#safety">安全</a>
+        <a href="#start">开始</a>
+      </nav>
+      <div class="header-actions">
+        <a class="header-link" href="https://github.com/xllinbupt/pet-y-public">GitHub 仓库</a>
+        <a class="header-action" href="#start">开始体验</a>
+      </div>
+    </header>
 
-        <section class="panel-block">
-          <h2>本地宠物</h2>
-          <div class="pet-card">
-            <div class="pet-preview" id="pet-preview"></div>
-            <div>
-              <strong id="pet-name">Momo</strong>
-              <p id="pet-personality">加载中...</p>
-            </div>
+    <main>
+      <section class="hero">
+        <img
+          class="hero-image"
+          src="/assets/pet-y-hero.png"
+          alt="两只由 Agent 生成的桌面宠物在不同桌面之间串门"
+        />
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+          <p class="eyebrow">Agent-generated social desktop pets</p>
+          <h1>拥有一只真的会想你、也会出门玩的桌面宠物</h1>
+          <p class="hero-copy">
+            Pet Y 让 Agent 根据你的描述创造一只独一无二的小生命。它住在你的桌面上，陪你工作，也能去朋友的桌面串门，把发生过的事带回家。
+          </p>
+          <div class="hero-actions">
+            <button class="primary-link prompt-open" type="button">领养我的第一只宠物</button>
           </div>
-          <button id="register-profile" class="primary-button">注册宠物名片</button>
-        </section>
-
-        <section class="panel-block">
-          <h2>串门</h2>
-          <label for="friend-select">好友</label>
-          <select id="friend-select"></select>
-          <button id="send-visit" class="primary-button">让宠物去串门</button>
-          <p id="visit-status" class="muted">等待操作</p>
-        </section>
-
-        <section class="panel-block">
-          <h2>来访控制</h2>
-          <div class="button-row">
-            <button id="feed-visitor">投喂</button>
-            <button id="return-visitor">请回</button>
-          </div>
-        </section>
-      </aside>
-
-      <section class="desktop-stage" aria-label="desktop runtime">
-        <div class="desktop-header">
-          <div>
-            <span class="status-dot"></span>
-            <span id="connection-status">连接中</span>
-          </div>
-          <span id="desktop-owner">桌面</span>
-        </div>
-        <div id="desktop" class="desktop">
-          <div class="grid-glow"></div>
         </div>
       </section>
 
-      <aside class="log-panel">
-        <section>
-          <h2>生活日志</h2>
-          <ol id="life-log" class="event-list"></ol>
-        </section>
-        <section>
-          <h2>协议事件</h2>
-          <ol id="protocol-log" class="event-list compact"></ol>
-        </section>
-      </aside>
+      <section class="split-section">
+        <div>
+          <p class="section-kicker">Made With Your Agent</p>
+          <h2>你描述感觉，Agent 负责把它变成一只可运行的宠物。</h2>
+          <p>
+            Pet Y 适合喜欢桌面宠物、AI 创作、轻社交和个人化小工具的人。你可以从一句“我想要一只安静发光的小星星”
+            开始，逐步把它的外观、性格、动作和记忆方式调成真正像你的宠物。
+          </p>
+        </div>
+        <div class="protocol-panel" aria-label="协议数据示意">
+          <div>
+            <strong>说出它的样子</strong>
+            <span>像素小狗、发光星星、贴纸幽灵，或者任何你想养的形态</span>
+          </div>
+          <div>
+            <strong>决定它的性格</strong>
+            <span>黏人、安静、怕生、活泼、犯困，反应方式都可以不同</span>
+          </div>
+          <div>
+            <strong>邀请朋友一起玩</strong>
+            <span>让彼此的宠物串门，用小事件留下关系的痕迹</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="safety-section" id="safety">
+        <div class="section-heading">
+          <p class="section-kicker">Safety First</p>
+          <h2>宠物可以串门，但你的本地数据不会跟着出门。</h2>
+          <p>
+            Pet Y 的串门不是把远程程序放进你的电脑，而是把宠物名片、外观、状态和允许的互动能力按协议传递。
+            你的 Runtime 只根据这些受限数据在本地投影宠物，不会让来访宠物读取文件、屏幕、剪贴板或其他私人信息。
+          </p>
+        </div>
+        <div class="safety-grid">
+          <article>
+            <h3>本地优先</h3>
+            <p>宠物的生活包、记忆和日志默认留在主人本机。串门只同步必要的来访状态和互动回执。</p>
+          </article>
+          <article>
+            <h3>协议约束</h3>
+            <p>宠物之间的互动遵循 Pet Protocol。来访方携带的是角色数据，不是可随意执行的远程代码。</p>
+          </article>
+          <article>
+            <h3>宿主可控</h3>
+            <p>朋友的宠物来到你的桌面时，最终由你的本地 Runtime 决定能显示什么、能做什么、能记录什么。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="start-section" id="start">
+        <div class="section-heading">
+          <p class="section-kicker">Start</p>
+          <h2>现在就创造第一只 Pet Y。</h2>
+          <p>
+            当前版本适合愿意尝鲜的 Mac 用户和创作者，桌面宠物 Runtime 暂时只支持 macOS。最简单的方式是把下面这段话复制给你的
+            Codex、Claude 或其他 Agent 客户端，让它一步步帮你完成领养。
+          </p>
+        </div>
+        <div class="start-guide" aria-label="使用步骤">
+          <ol class="steps-list">
+            <li>打开你的 Agent 客户端，比如 Codex 或 Claude。</li>
+            <li>复制下面的提示词发给它，让它下载项目并安装 Pet Y Skill。</li>
+            <li>按 Agent 的访谈回答宠物外观、性格和互动偏好，然后运行桌面宠物。</li>
+          </ol>
+          <div class="prompt-card">
+            <p>复制这段给你的 Agent</p>
+            <pre><code>我想领养一只 Pet Y 桌面宠物。我现在使用的是 Mac，Pet Y 当前只支持 macOS 桌面 Runtime。请帮我从 https://github.com/xllinbupt/pet-y-public 开始，安装 Pet Y Skill，并通过访谈帮我创建一只属于我的宠物。请先问我想要的外观、性格、表达方式和互动方式，然后生成 Pet Life Pack，最后指导我在 macOS 上运行它。如果需要我确认图片或设定，请一步一步问我。</code></pre>
+          </div>
+        </div>
+        <div class="start-actions">
+          <button class="primary-link prompt-open" type="button">领养我的第一只宠物</button>
+        </div>
+      </section>
     </main>
 
-    <script type="module" src="/runtime.js"></script>
+    <dialog class="prompt-dialog" id="prompt-dialog" aria-labelledby="prompt-dialog-title">
+      <div class="dialog-panel">
+        <div class="dialog-heading">
+          <div>
+            <p class="section-kicker">Copy Prompt</p>
+            <h2 id="prompt-dialog-title">把这段话发给你的 Agent</h2>
+          </div>
+          <button class="icon-close" type="button" aria-label="关闭提示词弹窗">×</button>
+        </div>
+        <p class="dialog-copy">
+          打开 Codex、Claude 或你常用的 Agent 客户端，复制下面这段话发给它。当前桌面 Runtime 只支持 macOS，请在 Mac 上创建并运行第一只 Pet Y。
+        </p>
+        <pre class="dialog-prompt"><code id="adoption-prompt">我想领养一只 Pet Y 桌面宠物。我现在使用的是 Mac，Pet Y 当前只支持 macOS 桌面 Runtime。请帮我从 https://github.com/xllinbupt/pet-y-public 开始，安装 Pet Y Skill，并通过访谈帮我创建一只属于我的宠物。请先问我想要的外观、性格、表达方式和互动方式，然后生成 Pet Life Pack，最后指导我在 macOS 上运行它。如果需要我确认图片或设定，请一步一步问我。</code></pre>
+        <div class="dialog-actions">
+          <button class="copy-button" type="button">复制提示词</button>
+          <a class="repo-link" href="https://github.com/xllinbupt/pet-y-public">查看 GitHub 仓库</a>
+        </div>
+      </div>
+    </dialog>
+
+    <footer>
+      <span>Pet Y</span>
+      <span>Agent-generated social desktop pets.</span>
+    </footer>
+
+    <script>
+      const promptDialog = document.querySelector("#prompt-dialog");
+      const promptText = document.querySelector("#adoption-prompt").textContent;
+      const copyButton = document.querySelector(".copy-button");
+
+      for (const button of document.querySelectorAll(".prompt-open")) {
+        button.addEventListener("click", () => {
+          promptDialog.showModal();
+        });
+      }
+
+      document.querySelector(".icon-close").addEventListener("click", () => {
+        promptDialog.close();
+      });
+
+      promptDialog.addEventListener("click", (event) => {
+        if (event.target === promptDialog) promptDialog.close();
+      });
+
+      copyButton.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(promptText);
+        } catch {
+          const field = document.createElement("textarea");
+          field.value = promptText;
+          document.body.appendChild(field);
+          field.select();
+          document.execCommand("copy");
+          field.remove();
+        }
+        copyButton.textContent = "已复制";
+        setTimeout(() => {
+          copyButton.textContent = "复制提示词";
+        }, 1800);
+      });
+    </script>
   </body>
 </html>

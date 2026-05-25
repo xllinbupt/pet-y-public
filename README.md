@@ -4,9 +4,13 @@ Pet Y is an agent-generated social desktop pet prototype.
 
 Instead of shipping one fixed pet, Pet Y provides a workflow where an AI agent helps a user create a local desktop pet, run it on macOS, and let it visit friends through a lightweight Relay.
 
+> Current desktop support: **macOS only**. Pet Y's native desktop Runtime is built with Swift/AppKit for Mac. Windows and Linux can host or run the Relay, but they cannot run the desktop pet Runtime yet.
+
 ## 中文简介
 
 Pet Y 不是一只固定的桌面宠物，而是一套让 Agent 帮用户“创造宠物生命”的流程。
+
+> 当前桌面端暂时只支持 **macOS / Mac 电脑**。Windows 和 Linux 可以运行 Relay 等服务，但还不能运行桌面宠物 Runtime。
 
 当前原型已经能跑通一个真实社交闭环：
 
@@ -37,6 +41,8 @@ https://github.com/xllinbupt/pet-y-public
 - Copies a friend invitation message from the desktop Runtime.
 
 ## Quick Start
+
+Use a Mac for every step that installs or launches the desktop Runtime.
 
 Install the Pet Y Skill locally:
 
@@ -70,7 +76,7 @@ Normal users do not need Xcode or local Swift compilation. Developers changing t
 Ask an Agent to use the Pet Y Skill. Codex is preferred for the current MVP because it can help generate pet images:
 
 ```text
-Use the Pet Y Skill to create my own desktop pet.
+I want to adopt a Pet Y desktop pet. I am using a Mac, and I understand Pet Y currently only supports the macOS desktop Runtime. Please use the Pet Y Skill to create my own desktop pet.
 ```
 
 The Agent should install and prepare the project, then interview the user before generating a pet. It should ask about name, style, appearance, personality, actions, behaviors, and companionship preferences. Invited friends should create their own pets; they should not simply run the inviter's sample dog.
@@ -98,7 +104,7 @@ PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/luma/pet-life
 
 From the macOS menu bar `Pet Y` item, choose `邀请好友一起玩`. Pet Y copies a share message containing the public repository, Relay URL, and friend invite phrase.
 
-Your friend gives that message to an Agent. Codex is preferred for this MVP because it can help generate pet images. The Agent should create and approve the pet image first, run the pet locally, then bind the friend relationship with:
+Your friend should also use a Mac. They give that message to an Agent. Codex is preferred for this MVP because it can help generate pet images. The Agent should create and approve the pet image first, run the pet locally on macOS, then bind the friend relationship with:
 
 ```bash
 PET_Y_RELAY=http://your-relay-host:8787 ./scripts/accept-friend-invite.sh <friend-invite-phrase>

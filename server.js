@@ -645,7 +645,7 @@ async function handleApi(req, res, url) {
 function serveStatic(req, res, url) {
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === "/") pathname = "/index.html";
-  if (pathname === "/alice" || pathname === "/bob") pathname = "/index.html";
+  if (pathname === "/alice" || pathname === "/bob") pathname = "/runtime.html";
 
   const filePath = path.normalize(path.join(publicDir, pathname));
   if (!filePath.startsWith(publicDir)) {
@@ -668,6 +668,8 @@ function serveStatic(req, res, url) {
           ? "text/css; charset=utf-8"
           : ext === ".js"
             ? "text/javascript; charset=utf-8"
+            : ext === ".png"
+              ? "image/png"
             : "application/octet-stream";
     res.writeHead(200, { "content-type": type });
     res.end(data);

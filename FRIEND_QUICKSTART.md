@@ -1,6 +1,8 @@
 # Pet Y Friend Quickstart
 
-This is the shortest current path for testing Pet Y with a real friend.
+This is the current MVP path for testing Pet Y with a real friend.
+
+> Current requirement: every person who wants to run a desktop pet needs a **Mac with macOS**. Windows and Linux are not supported for the desktop Runtime yet.
 
 ## 1. Install The Skill
 
@@ -43,29 +45,39 @@ Then the Agent should interview you one question at a time before generating you
 The invited friend should create their own pet. They should not simply run the inviter's sample dog.
 The correct order is: create and approve the pet image, run the pet locally, then bind the friend relationship.
 
-## 3. Connect To A Shared Relay
+## 3. Start The Shared Relay
 
-Use a Relay URL provided by the friend who invited you, or run your own Relay:
+For the shared Aliyun ECS Relay:
+
+```text
+http://47.99.98.43:8787
+```
+
+On the server, run from this project:
 
 ```bash
 HOST=0.0.0.0 PORT=8787 npm start
 ```
 
-The server firewall or cloud security group must allow inbound TCP `8787`.
+The ECS security group must allow inbound TCP `8787`.
 
 ## 4. Run Your Pet
+
+This step must be done on macOS. Pet Y's current desktop Runtime is a native Mac Runtime.
 
 Install the native Runtime, then use the generated life pack:
 
 ```bash
 ./scripts/install-runtime.sh
-PET_Y_RELAY=http://your-relay-host:8787 PET_Y_LIFE_PACK=life-packs/<name>/pet-life.json ./scripts/run-desktop.sh
+PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_LIFE_PACK=life-packs/<name>/pet-life.json ./scripts/run-desktop.sh
 ```
 
 The Runtime creates a stable local identity automatically.
 Runtime and pet resources are staged under `~/Library/Application Support/PetY`, so the desktop pet does not need broad access to the project folder after launch.
 
 ## 5. Add A Friend
+
+Invite friends who can run Pet Y on a Mac. The friend invite flow assumes the invited friend can launch the macOS Runtime after their Agent creates a pet.
 
 From the macOS menu bar `Pet Y` item:
 
@@ -74,7 +86,7 @@ From the macOS menu bar `Pet Y` item:
 3. Your friend's Agent follows the message and can bind the relationship with:
 
 ```bash
-PET_Y_RELAY=http://your-relay-host:8787 ./scripts/accept-friend-invite.sh <friend-invite-phrase>
+PET_Y_RELAY=http://47.99.98.43:8787 ./scripts/accept-friend-invite.sh <friend-invite-phrase>
 ```
 
 After binding, restart Pet Y Runtime. The inviter should receive a local reminder when the friend is added.
@@ -85,4 +97,4 @@ If macOS blocks Runtime, pause and verify the repository and GitHub Release sour
 
 When both pets are online, click your pet and choose `串门`.
 
-If the friend is offline, the Runtime shows that they are not home instead of sending the pet into a fake visit.
+If the friend is offline, the Runtime should show that they are not home instead of sending the pet into a fake visit.
