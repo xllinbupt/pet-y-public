@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-let PetYRuntimeVersion = "v0.1.28"
+let PetYRuntimeVersion = "v0.1.29"
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -97,6 +97,25 @@ struct VisitStartedPayload: Codable {
     let profile: PetProfile
     let animation_states: [String: AnimationState]?
     let asset_blobs: [String: String]?
+}
+
+struct VisitEndedPayload: Codable {
+    let visit_id: String
+    let reason: String?
+}
+
+final class VisitorProjection {
+    var visit: VisitSession
+    let profile: PetProfile
+    let window: PetWindow
+    var roamTimer: Timer?
+    var animationTimer: Timer?
+
+    init(visit: VisitSession, profile: PetProfile, window: PetWindow) {
+        self.visit = visit
+        self.profile = profile
+        self.window = window
+    }
 }
 
 struct MemoryReceipt: Codable {
@@ -1140,12 +1159,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var panel: ControlPanel!
     var localWindow: PetWindow?
     var awaySignWindow: AwaySignWindow?
-    var visitorWindow: PetWindow?
+    var visitors: [String: VisitorProjection] = [:]
+    let maxVisitors = 5
     var ballWindow: BallWindow?
     var interactionMenuWindow: InteractionMenuWindow?
     weak var interactionMenuAnchorWindow: PetWindow?
     var interactionMenuFollowTimer: Timer?
-    var visitorVisit: VisitSession?
     var outgoingVisit: VisitSession?
     var outgoingVisitTargetName: String?
     var friends: [FriendStatus] = []
@@ -1155,8 +1174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var localSleepTimer: Timer?
     var localRoamTimer: Timer?
     var localAnimationTimer: Timer?
-    var visitorRoamTimer: Timer?
-    var visitorAnimationTimer: Timer?
+    var visitorPairTimer: Timer?
 
     override init() {
         let args = CommandLine.arguments
@@ -1568,7 +1586,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 log("收到远端互动事件：\(event.type)")
             }
         case "visit_ended":
-            removeVisitor()
+            if let payload = try? decoder.decode(VisitEndedPayload.self, from: data) {
+                removeVisitor(visitId: payload.visit_id)
+            } else {
+                removeAllVisitors()
+            }
             log("小客人已经回家了。")
         case "memory_receipt":
             if let receipt = try? decoder.decode(MemoryReceipt.self, from: data) {
@@ -1586,24 +1608,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showVisitor(_ payload: VisitStartedPayload) {
-        removeVisitor()
-        visitorVisit = payload.visit
+        removeVisitor(visitId: payload.visit.visit_id)
         panel.setHasVisitor(true)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let visitId = payload.visit.visit_id
         let view = PetView(
             profile: payload.profile,
             isVisitor: true,
             animationStates: payload.animation_states,
             assetBaseURL: materializeVisitorAssets(payload),
             onClick: { [weak self] in
-                self?.showVisitorInteractionMenu()
+                self?.showVisitorInteractionMenu(visitId: visitId)
             },
             onAlternateClick: { [weak self] in
-                self?.showVisitorInteractionMenu()
+                self?.showVisitorInteractionMenu(visitId: visitId)
             },
             onDragEnd: { [weak self] from, to, duration in
-                self?.visitorWindow?.contentView.map { ($0 as? PetView)?.say("这个角落也不错。") }
+                self?.visitorView(visitId: visitId)?.say("这个角落也不错。")
                 self?.recordVisitEvent(
+                    visitId: visitId,
                     type: "dragged",
                     data: [
                         "from_x": "\(Int(from.x))",
@@ -1613,13 +1636,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         "duration_ms": "\(duration)"
                     ]
                 )
-                self?.scheduleVisitorRoam()
+                self?.scheduleVisitorRoam(visitId: visitId)
             }
         )
-        visitorWindow = PetWindow(view: view, origin: CGPoint(x: screen.maxX - 320, y: screen.minY + 300))
+        let index = visitors.count
+        let origin = CGPoint(
+            x: screen.maxX - 320 - CGFloat(index % 3) * 118,
+            y: screen.minY + 260 + CGFloat(index / 3) * 118
+        )
+        let window = PetWindow(view: view, origin: origin)
+        visitors[visitId] = VisitorProjection(visit: payload.visit, profile: payload.profile, window: window)
         view.say("我是 \(payload.profile.name)，右键可以投喂我。")
         remember("\(payload.profile.name) 来你的桌面串门了。")
-        scheduleVisitorRoam()
+        scheduleVisitorRoam(visitId: visitId)
+        scheduleVisitorPairPlay()
     }
 
     private func handleOutgoingVisitStatus(_ visit: VisitSession) {
@@ -1657,10 +1687,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func answerVisitRequest(_ payload: VisitStartedPayload) {
+        if visitors.count >= maxVisitors {
+            let body = VisitDecisionRequest(user_id: userId, action: "decline")
+            relay.post("api/visits/\(payload.visit.visit_id)/decision", body: body) { [weak self] (_: Result<VisitDecisionResponse, Error>) in
+                DispatchQueue.main.async {
+                    self?.log("桌面来访宠物已满，已拒绝 \(payload.profile.name) 来串门。")
+                }
+            }
+            return
+        }
         let alert = NSAlert()
         alert.icon = NSImage(systemSymbolName: "door.left.hand.open", accessibilityDescription: "敲门")
         alert.messageText = "\(payload.profile.name) 在敲门"
-        alert.informativeText = "它想来你的桌面玩一会儿。"
+        alert.informativeText = "它想来你的桌面玩一会儿。当前可同时接待 \(maxVisitors) 只来访宠物。"
         alert.addButton(withTitle: "让它进来")
         alert.addButton(withTitle: "这次不了")
         let accepted = alert.runModal() == .alertFirstButtonReturn
@@ -1694,8 +1733,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return base
     }
 
-    private func recordVisitEvent(type: String, data: [String: String]) {
-        guard let visit = visitorVisit else {
+    private func visitorView(visitId: String) -> PetView? {
+        visitors[visitId]?.window.contentView as? PetView
+    }
+
+    private func firstVisitorId() -> String? {
+        visitors.keys.sorted().first
+    }
+
+    private func recordVisitEvent(visitId: String, type: String, data: [String: String]) {
+        guard let visit = visitors[visitId]?.visit else {
             log("现在没有来串门的小客人。")
             return
         }
@@ -1710,13 +1757,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .success(let response): self?.log("记录互动事件：\(response.event.type)")
                 case .failure(let error):
                     if self?.isLostVisitError(error) == true {
-                        self?.handleLostVisitorVisit()
+                        self?.handleLostVisitorVisit(visitId: visit.visit_id)
                     } else {
                         self?.log("互动事件上传失败：\(error.localizedDescription)")
                     }
                 }
             }
         }
+    }
+
+    private func recordVisitEvent(type: String, data: [String: String]) {
+        guard let visitId = firstVisitorId() else {
+            log("现在没有来串门的小客人。")
+            return
+        }
+        recordVisitEvent(visitId: visitId, type: type, data: data)
     }
 
     private func isLostVisitError(_ error: Error) -> Bool {
@@ -1726,10 +1781,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             || (nsError.code == 409 && text.contains("Visit is not active"))
     }
 
-    private func handleLostVisitorVisit() {
-        guard visitorVisit != nil || visitorWindow != nil else { return }
+    private func handleLostVisitorVisit(visitId: String) {
+        guard visitors[visitId] != nil else { return }
         log("来访会话已经失效，已清理本地来访宠物。")
-        removeVisitor()
+        removeVisitor(visitId: visitId)
     }
 
     private func handleLostOutgoingVisit() {
@@ -1739,19 +1794,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.setStatus("\(localPet.name) 回家了")
     }
 
-    private func feedVisitor() {
-        guard visitorVisit != nil else {
+    private func feedVisitor(visitId: String) {
+        guard let visitor = visitors[visitId] else {
             log("现在没有来串门的小客人。")
             return
         }
-        visitorRoamTimer?.invalidate()
-        (visitorWindow?.contentView as? PetView)?.say("我会把草莓带回去。")
-        recordVisitEvent(type: "fed", data: ["item": "草莓"])
-        scheduleVisitorRoam()
+        visitor.roamTimer?.invalidate()
+        (visitor.window.contentView as? PetView)?.say("我会把草莓带回去。")
+        recordVisitEvent(visitId: visitId, type: "fed", data: ["item": "草莓"])
+        scheduleVisitorRoam(visitId: visitId)
     }
 
-    private func returnVisitor() {
-        guard let visit = visitorVisit else {
+    private func returnVisitor(visitId: String? = nil) {
+        guard let resolvedVisitId = visitId ?? firstVisitorId(),
+              let visit = visitors[resolvedVisitId]?.visit else {
             log("现在没有需要送回家的小客人。")
             return
         }
@@ -1760,11 +1816,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 switch result {
                 case .success:
-                    self?.removeVisitor()
+                    self?.removeVisitor(visitId: resolvedVisitId)
                     self?.log("已送小客人回家。")
                 case .failure(let error):
                     if self?.isLostVisitError(error) == true {
-                        self?.handleLostVisitorVisit()
+                        self?.handleLostVisitorVisit(visitId: resolvedVisitId)
                     } else {
                         self?.log("送小客人回家失败：\(error.localizedDescription)")
                     }
@@ -1805,16 +1861,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func removeVisitor() {
+    private func removeVisitor(visitId: String) {
         closeInteractionMenu()
-        visitorRoamTimer?.invalidate()
-        visitorAnimationTimer?.invalidate()
-        visitorRoamTimer = nil
-        visitorAnimationTimer = nil
-        visitorWindow?.close()
-        visitorWindow = nil
-        visitorVisit = nil
-        panel?.setHasVisitor(false)
+        guard let visitor = visitors.removeValue(forKey: visitId) else {
+            panel?.setHasVisitor(!visitors.isEmpty)
+            return
+        }
+        visitor.roamTimer?.invalidate()
+        visitor.animationTimer?.invalidate()
+        visitor.window.close()
+        panel?.setHasVisitor(!visitors.isEmpty)
+        if visitors.count < 2 {
+            visitorPairTimer?.invalidate()
+            visitorPairTimer = nil
+        } else {
+            scheduleVisitorPairPlay()
+        }
+    }
+
+    private func removeAllVisitors() {
+        closeInteractionMenu()
+        visitorPairTimer?.invalidate()
+        visitorPairTimer = nil
+        for visitId in Array(visitors.keys) {
+            removeVisitor(visitId: visitId)
+        }
     }
 
     private func sayLocal(_ text: String) {
@@ -1866,7 +1937,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.promptForInvite()
             }
         ]
-        if visitorVisit != nil {
+        if !visitors.isEmpty {
             actions.append(PetAction(title: "送回家") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.returnVisitor()
@@ -1896,52 +1967,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showInteractionMenu(anchor: localWindow, actions: actions)
     }
 
-    private func showVisitorInteractionMenu() {
-        guard let visitorWindow else { return }
+    private func showVisitorInteractionMenu(visitId: String) {
+        guard let visitor = visitors[visitId] else { return }
         closeInteractionMenu()
+        let visitorWindow = visitor.window
         guard let visitorView = visitorWindow.contentView as? PetView else { return }
         let capabilities = visitorInteractionCapabilities(for: visitorView.profile)
         var actions: [PetAction] = []
         if capabilities.contains("petting") {
             actions.append(PetAction(title: "摸摸") { [weak self] in
                 self?.closeInteractionMenu()
-                self?.petVisitor()
+                self?.petVisitor(visitId: visitId)
             })
         }
         if capabilities.contains("message") {
             actions.append(PetAction(title: "留言") { [weak self] in
                 self?.closeInteractionMenu()
-                self?.leaveMessageForVisitor()
+                self?.leaveMessageForVisitor(visitId: visitId)
             })
         }
         if capabilities.contains("gift.simple") {
             actions.append(PetAction(title: "投喂") { [weak self] in
                 self?.closeInteractionMenu()
-                self?.feedVisitor()
+                self?.feedVisitor(visitId: visitId)
             })
         }
         if capabilities.contains("pet_to_pet.greeting"), localWindow != nil {
             actions.append(PetAction(title: "打招呼") { [weak self] in
                 self?.closeInteractionMenu()
-                self?.greetVisitorWithLocalPet()
+                self?.greetVisitorWithLocalPet(visitId: visitId)
             })
         }
         if capabilities.contains("pet_to_pet.sit_together"), localWindow != nil {
             actions.append(PetAction(title: "坐一会儿") { [weak self] in
                 self?.closeInteractionMenu()
-                self?.sitTogetherWithVisitor()
+                self?.sitTogetherWithVisitor(visitId: visitId)
             })
         }
         if capabilities.contains("pet_to_pet.walk_together"), localWindow != nil {
             actions.append(PetAction(title: "一起玩") { [weak self] in
                 self?.closeInteractionMenu()
-                self?.playTogetherWithVisitor()
+                self?.playTogetherWithVisitor(visitId: visitId)
             })
         }
         if capabilities.contains("return_home") {
             actions.append(PetAction(title: "送回家") { [weak self] in
                 self?.closeInteractionMenu()
-                self?.returnVisitor()
+                self?.returnVisitor(visitId: visitId)
             })
         }
         if actions.isEmpty {
@@ -2032,12 +2104,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scheduleLocalRoam()
     }
 
-    private func petVisitor() {
-        visitorRoamTimer?.invalidate()
-        animatePettingReaction(window: visitorWindow)
-        (visitorWindow?.contentView as? PetView)?.say("谢谢你理我。")
-        recordVisitEvent(type: "clicked", data: ["message": "host petted visitor pet"])
-        scheduleVisitorRoam()
+    private func petVisitor(visitId: String) {
+        guard let visitor = visitors[visitId] else { return }
+        visitor.roamTimer?.invalidate()
+        animatePettingReaction(window: visitor.window)
+        (visitor.window.contentView as? PetView)?.say("谢谢你理我。")
+        recordVisitEvent(visitId: visitId, type: "clicked", data: ["message": "host petted visitor pet"])
+        scheduleVisitorRoam(visitId: visitId)
     }
 
     private func animatePettingReaction(window: PetWindow?) {
@@ -2059,14 +2132,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func leaveMessageForVisitor() {
-        guard visitorVisit != nil else {
+    private func leaveMessageForVisitor(visitId: String) {
+        guard let visitor = visitors[visitId] else {
             log("现在没有来串门的小客人。")
             return
         }
-        let name = (visitorWindow?.contentView as? PetView)?.profile.name ?? "小客人"
+        let name = visitor.profile.name
         promptForPetMessage(targetName: name) { [weak self] text in
-            self?.recordVisitEvent(type: "message", data: ["text": text])
+            self?.recordVisitEvent(visitId: visitId, type: "message", data: ["text": text])
             self?.log("已给 \(name) 留言。")
         }
     }
@@ -2115,20 +2188,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         log("\(localPet.name) 带回 \(messages.count) 条留言。")
     }
 
-    private func greetVisitorWithLocalPet() {
-        guard visitorWindow != nil else {
+    private func greetVisitorWithLocalPet(visitId: String) {
+        guard let visitor = visitors[visitId] else {
             log("现在没有来串门的小客人。")
             return
         }
         sayLocal("你好呀。")
-        (visitorWindow?.contentView as? PetView)?.say("我来玩一会儿。")
+        (visitor.window.contentView as? PetView)?.say("我来玩一会儿。")
         playLocal(.rest, returnToIdleAfter: 1.8)
-        playVisitorRest(returnToIdleAfter: 1.8)
+        playVisitorRest(visitId: visitId, returnToIdleAfter: 1.8)
         recordVisitEvent(
+            visitId: visitId,
             type: "pet_to_pet.greeting",
             data: [
                 "local_pet_id": localPet.pet_id,
-                "visitor_pet_id": visitorVisit?.pet_id ?? ""
+                "visitor_pet_id": visitor.visit.pet_id
             ]
         )
         remember("\(localPet.name) 和来访的小客人打了招呼。")
@@ -2136,16 +2210,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scheduleLocalRoam()
     }
 
-    private func sitTogetherWithVisitor() {
-        guard let localWindow, let visitorWindow else {
+    private func sitTogetherWithVisitor(visitId: String) {
+        guard let localWindow, let visitor = visitors[visitId] else {
             log("现在没有来串门的小客人。")
             return
         }
+        let visitorWindow = visitor.window
         localSleepTimer?.invalidate()
         localRoamTimer?.invalidate()
         localAnimationTimer?.invalidate()
-        visitorRoamTimer?.invalidate()
-        visitorAnimationTimer?.invalidate()
+        visitor.roamTimer?.invalidate()
+        visitor.animationTimer?.invalidate()
 
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let localStart = localWindow.frame.origin
@@ -2165,12 +2240,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         (visitorWindow.contentView as? PetView)?.say("我坐一会儿。")
         (visitorWindow.contentView as? PetView)?.faceMovement(from: visitorStart, to: visitorTarget)
         playLocal(.rest)
-        playVisitorMove()
+        playVisitorMove(visitId: visitId)
         recordVisitEvent(
+            visitId: visitId,
             type: "pet_to_pet.sit_together",
             data: [
                 "local_pet_id": localPet.pet_id,
-                "visitor_pet_id": visitorVisit?.pet_id ?? "",
+                "visitor_pet_id": visitor.visit.pet_id,
                 "from_x": "\(Int(visitorStart.x))",
                 "from_y": "\(Int(visitorStart.y))",
                 "to_x": "\(Int(visitorTarget.x))",
@@ -2185,24 +2261,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } completionHandler: { [weak self] in
             guard let self else { return }
             self.playLocal(.rest, returnToIdleAfter: 2.8)
-            self.playVisitorRest(returnToIdleAfter: 2.8)
+            self.playVisitorRest(visitId: visitId, returnToIdleAfter: 2.8)
             self.remember("\(self.localPet.name) 和来访的小客人靠在一起坐了一会儿。")
             self.scheduleLocalRoam()
             self.scheduleLocalSleep()
-            self.scheduleVisitorRoam()
+            self.scheduleVisitorRoam(visitId: visitId)
         }
     }
 
-    private func playTogetherWithVisitor() {
-        guard let localWindow, let visitorWindow else {
+    private func playTogetherWithVisitor(visitId: String) {
+        guard let localWindow, let visitor = visitors[visitId] else {
             log("现在没有来串门的小客人。")
             return
         }
+        let visitorWindow = visitor.window
         localSleepTimer?.invalidate()
         localRoamTimer?.invalidate()
         localAnimationTimer?.invalidate()
-        visitorRoamTimer?.invalidate()
-        visitorAnimationTimer?.invalidate()
+        visitor.roamTimer?.invalidate()
+        visitor.animationTimer?.invalidate()
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let localStart = localWindow.frame.origin
         let visitorStart = visitorWindow.frame.origin
@@ -2218,12 +2295,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         (localWindow.contentView as? PetView)?.faceMovement(from: localStart, to: localTarget)
         (visitorWindow.contentView as? PetView)?.faceMovement(from: visitorStart, to: visitorTarget)
         playLocal(.move)
-        playVisitorMove()
+        playVisitorMove(visitId: visitId)
         recordVisitEvent(
+            visitId: visitId,
             type: "pet_to_pet.walk_together",
             data: [
                 "local_pet_id": localPet.pet_id,
-                "visitor_pet_id": visitorVisit?.pet_id ?? "",
+                "visitor_pet_id": visitor.visit.pet_id,
                 "from_x": "\(Int(visitorStart.x))",
                 "from_y": "\(Int(visitorStart.y))",
                 "to_x": "\(Int(visitorTarget.x))",
@@ -2238,16 +2316,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             visitorWindow.animator().setFrameOrigin(visitorTarget)
         } completionHandler: { [weak self] in
             self?.playLocal(.rest, returnToIdleAfter: 1.4)
-            (visitorWindow.contentView as? PetView)?.play("idle")
+            (visitor.window.contentView as? PetView)?.play("idle")
             self?.remember("\(self?.localPet.name ?? "宠物") 和来访的小客人一起在桌面上跑了一段。")
             self?.scheduleLocalRoam()
             self?.scheduleLocalSleep()
-            self?.scheduleVisitorRoam()
+            self?.scheduleVisitorRoam(visitId: visitId)
         }
     }
 
-    private func playVisitorRest(returnToIdleAfter delay: TimeInterval? = nil) {
-        guard let visitorView = visitorWindow?.contentView as? PetView else { return }
+    private func playVisitorRest(visitId: String, returnToIdleAfter delay: TimeInterval? = nil) {
+        guard let visitorView = visitors[visitId]?.window.contentView as? PetView else { return }
         for state in ["rest", "sit", "idle"] {
             if visitorView.animationStates[state] != nil {
                 visitorView.play(state, returnToIdleAfter: delay)
@@ -2256,8 +2334,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func playVisitorMove() {
-        guard let visitorView = visitorWindow?.contentView as? PetView else { return }
+    private func playVisitorMove(visitId: String) {
+        guard let visitorView = visitors[visitId]?.window.contentView as? PetView else { return }
         for state in ["move", "run", "walk", "float", "drift", "hop", "idle"] {
             if visitorView.animationStates[state] != nil {
                 visitorView.play(state)
@@ -2355,17 +2433,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    private func animateVisitorPet(to origin: CGPoint, duration: TimeInterval, completion: (() -> Void)? = nil) {
-        guard let visitorWindow else {
+    private func animateVisitorPet(visitId: String, to origin: CGPoint, duration: TimeInterval, completion: (() -> Void)? = nil) {
+        guard let visitor = visitors[visitId] else {
             completion?()
             return
         }
-        visitorAnimationTimer?.invalidate()
+        let visitorWindow = visitor.window
+        visitor.animationTimer?.invalidate()
         let start = visitorWindow.frame.origin
         (visitorWindow.contentView as? PetView)?.faceMovement(from: start, to: origin)
         let startedAt = Date()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self, weak visitorWindow] timer in
-            guard let self, let visitorWindow else {
+            guard let self, let visitorWindow, let visitor = self.visitors[visitId] else {
                 timer.invalidate()
                 return
             }
@@ -2379,11 +2458,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if progress >= 1.0 {
                 visitorWindow.setFrameOrigin(origin)
                 timer.invalidate()
-                self.visitorAnimationTimer = nil
+                visitor.animationTimer = nil
                 completion?()
             }
         }
-        visitorAnimationTimer = timer
+        visitor.animationTimer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
 
@@ -2435,21 +2514,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func scheduleVisitorRoam() {
-        visitorRoamTimer?.invalidate()
-        guard visitorWindow != nil, visitorVisit?.status == "active" else { return }
+    private func scheduleVisitorRoam(visitId: String) {
+        visitors[visitId]?.roamTimer?.invalidate()
+        guard let visitor = visitors[visitId], visitor.visit.status == "active" else { return }
         let delay = TimeInterval.random(in: 10...22)
-        visitorRoamTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            self?.performVisitorRoam()
+        visitor.roamTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.performVisitorRoam(visitId: visitId)
         }
     }
 
-    private func performVisitorRoam() {
-        guard let visitorWindow, visitorVisit?.status == "active" else {
-            visitorRoamTimer?.invalidate()
-            visitorRoamTimer = nil
+    private func performVisitorRoam(visitId: String) {
+        guard let visitor = visitors[visitId], visitor.visit.status == "active" else {
+            visitors[visitId]?.roamTimer?.invalidate()
+            visitors[visitId]?.roamTimer = nil
             return
         }
+        let visitorWindow = visitor.window
         closeInteractionMenu()
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let x = CGFloat.random(in: (screen.minX + 80)...(screen.maxX - 180))
@@ -2457,11 +2537,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let target = CGPoint(x: x, y: y)
         let start = visitorWindow.frame.origin
         let duration = localMoveDuration(from: start, to: target, speed: 190, minimum: 2.4, maximum: 6.2)
-        playVisitorMove()
+        playVisitorMove(visitId: visitId)
         if Bool.random() {
             (visitorWindow.contentView as? PetView)?.say("我去那边看看。")
         }
         recordVisitEvent(
+            visitId: visitId,
             type: "visitor_autonomous_roam",
             data: [
                 "from_x": "\(Int(start.x))",
@@ -2470,10 +2551,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 "to_y": "\(Int(target.y))"
             ]
         )
-        animateVisitorPet(to: target, duration: duration) { [weak self] in
-            self?.playVisitorRest(returnToIdleAfter: 1.6)
-            self?.scheduleVisitorRoam()
+        animateVisitorPet(visitId: visitId, to: target, duration: duration) { [weak self] in
+            self?.playVisitorRest(visitId: visitId, returnToIdleAfter: 1.6)
+            self?.scheduleVisitorRoam(visitId: visitId)
         }
+    }
+
+    private func scheduleVisitorPairPlay() {
+        visitorPairTimer?.invalidate()
+        guard visitors.filter({ $0.value.visit.status == "active" }).count >= 2 else { return }
+        let delay = TimeInterval.random(in: 18...36)
+        visitorPairTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.performVisitorPairPlay()
+        }
+    }
+
+    private func performVisitorPairPlay() {
+        let activeIds = visitors
+            .filter { $0.value.visit.status == "active" }
+            .map(\.key)
+            .shuffled()
+        guard activeIds.count >= 2,
+              let firstId = activeIds.first,
+              let secondId = activeIds.dropFirst().first,
+              let first = visitors[firstId],
+              let second = visitors[secondId] else {
+            scheduleVisitorPairPlay()
+            return
+        }
+
+        first.roamTimer?.invalidate()
+        second.roamTimer?.invalidate()
+        first.animationTimer?.invalidate()
+        second.animationTimer?.invalidate()
+
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let firstStart = first.window.frame.origin
+        let secondStart = second.window.frame.origin
+        let baseTarget = CGPoint(
+            x: firstStart.x < screen.midX ? screen.maxX - 300 : screen.minX + 120,
+            y: min(max((firstStart.y + secondStart.y) / 2 + 90, screen.minY + 90), screen.maxY - 190)
+        )
+        let firstTarget = baseTarget
+        let secondTarget = CGPoint(x: baseTarget.x + 104, y: baseTarget.y + 8)
+        let duration = localMoveDuration(from: firstStart, to: firstTarget, speed: 210, minimum: 2.4, maximum: 5.4)
+
+        (first.window.contentView as? PetView)?.say("一起去那边看看。")
+        (second.window.contentView as? PetView)?.say("好呀。")
+        playVisitorMove(visitId: firstId)
+        playVisitorMove(visitId: secondId)
+        recordVisitorPairEvent(
+            type: "pet_to_pet.walk_together",
+            firstId: firstId,
+            secondId: secondId,
+            data: [
+                "from_x": "\(Int(firstStart.x))",
+                "from_y": "\(Int(firstStart.y))",
+                "to_x": "\(Int(firstTarget.x))",
+                "to_y": "\(Int(firstTarget.y))"
+            ]
+        )
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            first.window.animator().setFrameOrigin(firstTarget)
+            second.window.animator().setFrameOrigin(secondTarget)
+        } completionHandler: { [weak self] in
+            guard let self else { return }
+            self.playVisitorRest(visitId: firstId, returnToIdleAfter: 2.0)
+            self.playVisitorRest(visitId: secondId, returnToIdleAfter: 2.0)
+            self.scheduleVisitorRoam(visitId: firstId)
+            self.scheduleVisitorRoam(visitId: secondId)
+            self.scheduleVisitorPairPlay()
+        }
+    }
+
+    private func recordVisitorPairEvent(type: String, firstId: String, secondId: String, data: [String: String]) {
+        guard let first = visitors[firstId], let second = visitors[secondId] else { return }
+        var firstData = data
+        firstData["peer_visit_id"] = second.visit.visit_id
+        firstData["peer_pet_id"] = second.visit.pet_id
+        firstData["peer_pet_name"] = second.profile.name
+        recordVisitEvent(visitId: firstId, type: type, data: firstData)
+
+        var secondData = data
+        secondData["peer_visit_id"] = first.visit.visit_id
+        secondData["peer_pet_id"] = first.visit.pet_id
+        secondData["peer_pet_name"] = first.profile.name
+        recordVisitEvent(visitId: secondId, type: type, data: secondData)
     }
 
     private func restorePersistentLogToPanel() {

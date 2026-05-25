@@ -220,6 +220,7 @@ Skill 生成新宠物时，优先使用通用动作名：`idle`、`move`、`rest
 - `pet_to_pet.greeting`：本地宠物和来访宠物互相打招呼。
 - `pet_to_pet.sit_together`：来访宠物靠近本地宠物，一起安静待一会儿。
 - `pet_to_pet.walk_together`：两只宠物一起从桌面一处移动到另一处。
+- 同一个宿主桌面可以同时有多只来访宠物，当前 macOS Runtime 上限为 5 只。来访宠物之间也可以使用 `pet_to_pet.*` 基础互动；Runtime 会为每个参与互动的 visit 分别写事件，方便每只宠物回家后形成自己的记忆。
 
 ## 7. 后续扩展
 
