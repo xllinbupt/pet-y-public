@@ -142,9 +142,11 @@ Use sprite sheet PNG. Plain PNG is not animated by itself; Runtime animates by s
 
 Static or mostly static states must not jitter. For `idle`, `rest`, and `sleep`, require a locked camera, identical canvas size, stable visual scale, and a stable anchor point across all frames. Keep the feet/body baseline fixed for grounded pets, or the center point fixed for floating/directionless pets. Animation should come from small parts such as blinking, tail movement, ear movement, breathing details, or glow changes, not from the whole pet changing size or being re-centered every frame.
 
+Canvas size is not enough. The pet's apparent body size must stay consistent across different action states, not only within one sheet. A sleeping, sitting, running, or signature-action pose may change silhouette, but the core character should occupy the same approximate visual scale and share the same anchor convention as the approved reference. Do not let one state fill the frame while another state is tiny. If an action needs distance or dramatic size change, describe it as a Runtime transform in `behavior.interactions` instead of baking different pet scales into the sprite art.
+
 Direction matters for movement states. Generate `move` / `run` / `walk` / `hop` sprite sheets in a consistent canonical direction: prefer right-facing. Set each directional state's `default_facing` to `right` or `left` to match the approved sheet; use `none` for front-facing or directionless states. Runtime flips the sprite from that declared default when the pet moves the other way. Do not mix left-facing and right-facing frames in the same sheet, or the pet will look like it is running backward.
 
-Do not call a pet finished just because the JSON and PNG files exist. A generated pet must pass a visual review: recognizable silhouette, consistent character identity, readable animation, no unintended size/position jitter in static states, and an appearance the user actually likes.
+Do not call a pet finished just because the JSON and PNG files exist. A generated pet must pass a visual review: recognizable silhouette, consistent character identity, readable animation, no unintended size/position jitter in static states, consistent apparent body size across all action states, and an appearance the user actually likes.
 
 The correct standard is model-generated or human-curated art. Programmatic drawing can be used only for throwaway engineering tests and must not be promoted as Skill output.
 
