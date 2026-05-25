@@ -83,6 +83,21 @@ struct FriendAddedPayload: Codable {
     let friend: FriendStatus?
 }
 
+struct VisitInvitation: Codable {
+    let request_id: String
+    let requester_user_id: String
+    let owner_user_id: String
+    let pet_id: String
+    let status: String
+    let visit_id: String?
+}
+
+struct VisitInvitationPayload: Codable {
+    let invitation: VisitInvitation
+    let requester: FriendStatus?
+    let profile: PetProfile?
+}
+
 struct GitHubRelease: Codable {
     let tag_name: String
     let html_url: String?
@@ -494,6 +509,131 @@ final class AwaySignWindow: NSWindow {
         contentView = view
         ignoresMouseEvents = false
         makeKeyAndOrderFront(nil)
+    }
+}
+
+final class KnockRequestWindow: NSWindow {
+    init(origin: CGPoint, petName: String, message: String, onAccept: @escaping () -> Void, onDecline: @escaping () -> Void) {
+        super.init(
+            contentRect: NSRect(x: origin.x, y: origin.y, width: 258, height: 148),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        isReleasedWhenClosed = false
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        level = .floating
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        contentView = KnockRequestView(
+            frame: NSRect(x: 0, y: 0, width: 258, height: 148),
+            petName: petName,
+            message: message,
+            onAccept: onAccept,
+            onDecline: onDecline
+        )
+        ignoresMouseEvents = false
+        makeKeyAndOrderFront(nil)
+    }
+}
+
+final class KnockRequestView: NSView {
+    let petName: String
+    let message: String
+    let onAccept: () -> Void
+    let onDecline: () -> Void
+
+    init(frame frameRect: NSRect, petName: String, message: String, onAccept: @escaping () -> Void, onDecline: @escaping () -> Void) {
+        self.petName = petName
+        self.message = message
+        self.onAccept = onAccept
+        self.onDecline = onDecline
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+
+        let accept = NSButton(title: "进来玩", target: self, action: #selector(acceptTapped))
+        accept.isBordered = false
+        accept.wantsLayer = true
+        accept.layer?.backgroundColor = NSColor(red: 0.42, green: 0.78, blue: 0.66, alpha: 1).cgColor
+        accept.layer?.cornerRadius = 9
+        accept.attributedTitle = NSAttributedString(string: "进来玩", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .bold), .foregroundColor: NSColor.white])
+        accept.frame = NSRect(x: 104, y: 16, width: 68, height: 30)
+        addSubview(accept)
+
+        let decline = NSButton(title: "先不了", target: self, action: #selector(declineTapped))
+        decline.isBordered = false
+        decline.wantsLayer = true
+        decline.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.95).cgColor
+        decline.layer?.cornerRadius = 9
+        decline.layer?.borderWidth = 1
+        decline.layer?.borderColor = NSColor.black.withAlphaComponent(0.12).cgColor
+        decline.attributedTitle = NSAttributedString(string: "先不了", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.black])
+        decline.frame = NSRect(x: 180, y: 16, width: 62, height: 30)
+        addSubview(decline)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func acceptTapped() { onAccept() }
+    @objc private func declineTapped() { onDecline() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill()
+        dirtyRect.fill()
+
+        let card = NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 4), xRadius: 18, yRadius: 18)
+        NSColor(red: 1.0, green: 0.96, blue: 0.82, alpha: 0.98).setFill()
+        card.fill()
+        NSColor.black.withAlphaComponent(0.18).setStroke()
+        card.lineWidth = 1.5
+        card.stroke()
+
+        drawPaw(at: NSPoint(x: 34, y: 62))
+        drawKnockLines()
+
+        let titleAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 15, weight: .bold),
+            .foregroundColor: NSColor.black
+        ]
+        "\(petName) 在敲门".draw(at: NSPoint(x: 82, y: 98), withAttributes: titleAttrs)
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.black.withAlphaComponent(0.72),
+            .paragraphStyle: paragraph
+        ]
+        NSString(string: message).draw(in: NSRect(x: 82, y: 56, width: 148, height: 34), withAttributes: attrs)
+    }
+
+    private func drawPaw(at origin: NSPoint) {
+        let color = NSColor(red: 0.93, green: 0.48, blue: 0.42, alpha: 1)
+        color.setFill()
+        NSBezierPath(ovalIn: NSRect(x: origin.x + 13, y: origin.y, width: 26, height: 24)).fill()
+        for point in [
+            NSPoint(x: origin.x + 0, y: origin.y + 24),
+            NSPoint(x: origin.x + 14, y: origin.y + 31),
+            NSPoint(x: origin.x + 31, y: origin.y + 29),
+            NSPoint(x: origin.x + 44, y: origin.y + 20)
+        ] {
+            NSBezierPath(ovalIn: NSRect(x: point.x, y: point.y, width: 13, height: 15)).fill()
+        }
+    }
+
+    private func drawKnockLines() {
+        NSColor.black.withAlphaComponent(0.3).setStroke()
+        for (x, y, length) in [(63.0, 102.0, 12.0), (70.0, 84.0, 10.0), (62.0, 73.0, 8.0)] {
+            let line = NSBezierPath()
+            line.move(to: NSPoint(x: x, y: y))
+            line.line(to: NSPoint(x: x + length, y: y + 4))
+            line.lineWidth = 2
+            line.stroke()
+        }
     }
 }
 
@@ -1043,6 +1183,8 @@ final class ControlPanel: NSObject {
     var onRecallPet: (() -> Void)?
     var onShareInvite: (() -> Void)?
     var onAcceptInvite: (() -> Void)?
+    var onInviteFriendPet: ((String) -> Void)?
+    var onDoNotDisturb: ((Int) -> Void)?
     var onCheckUpdate: (() -> Void)?
     var onOpenUpdate: (() -> Void)?
 
@@ -1123,6 +1265,11 @@ final class ControlPanel: NSObject {
                 item.representedObject = friend.user_id
                 item.isEnabled = friend.online
                 friendsMenu.addItem(item)
+
+                let inviteItem = actionItem(title: "邀请 \(friend.display_name) 来我家", action: #selector(inviteFriendPetTapped(_:)))
+                inviteItem.representedObject = friend.user_id
+                inviteItem.isEnabled = friend.online
+                friendsMenu.addItem(inviteItem)
             }
         }
         if hasAwayPet || hasVisitor {
@@ -1136,6 +1283,17 @@ final class ControlPanel: NSObject {
         }
         friendsItem.submenu = friendsMenu
         menu.addItem(friendsItem)
+        menu.addItem(.separator())
+
+        let dndItem = NSMenuItem(title: "勿扰", action: nil, keyEquivalent: "")
+        let dndMenu = NSMenu()
+        for (title, minutes) in [("半小时", 30), ("1 小时", 60), ("2 小时", 120)] {
+            let item = actionItem(title: title, action: #selector(doNotDisturbTapped(_:)))
+            item.representedObject = minutes
+            dndMenu.addItem(item)
+        }
+        dndItem.submenu = dndMenu
+        menu.addItem(dndItem)
         menu.addItem(.separator())
 
         if !recentLogs.isEmpty {
@@ -1166,6 +1324,8 @@ final class ControlPanel: NSObject {
     @objc private func recallPetTapped() { onRecallPet?() }
     @objc private func shareInviteTapped() { onShareInvite?() }
     @objc private func acceptInviteTapped() { onAcceptInvite?() }
+    @objc private func inviteFriendPetTapped(_ sender: NSMenuItem) { onInviteFriendPet?(sender.representedObject as? String ?? "") }
+    @objc private func doNotDisturbTapped(_ sender: NSMenuItem) { onDoNotDisturb?(sender.representedObject as? Int ?? 30) }
     @objc private func checkUpdateTapped() { onCheckUpdate?() }
     @objc private func openUpdateTapped() { onOpenUpdate?() }
     @objc private func quitTapped() { NSApp.terminate(nil) }
@@ -1209,6 +1369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var awaySignWindow: AwaySignWindow?
     var visitors: [String: VisitorProjection] = [:]
     let maxVisitors = 5
+    var knockWindows: [String: KnockRequestWindow] = [:]
     var ballWindow: BallWindow?
     var interactionMenuWindow: InteractionMenuWindow?
     weak var interactionMenuAnchorWindow: PetWindow?
@@ -1224,6 +1385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var localAnimationTimer: Timer?
     var visitorPairTimer: Timer?
     var latestRuntimeReleaseURL: URL?
+    var doNotDisturbUntil: Date?
 
     override init() {
         let args = CommandLine.arguments
@@ -1253,6 +1415,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onRecallPet = { [weak self] in self?.recallLocalPet() }
         panel.onShareInvite = { [weak self] in self?.shareInvite() }
         panel.onAcceptInvite = { [weak self] in self?.promptForInvite() }
+        panel.onInviteFriendPet = { [weak self] friend in self?.inviteFriendPet(to: friend) }
+        panel.onDoNotDisturb = { [weak self] minutes in self?.enableDoNotDisturb(minutes: minutes) }
         panel.onCheckUpdate = { [weak self] in self?.checkForRuntimeUpdate(silent: false) }
         panel.onOpenUpdate = { [weak self] in self?.openRuntimeReleasePage() }
 
@@ -1585,7 +1749,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return "加好友失败了。"
     }
 
+    private func inviteFriendPet(to friendUserId: String) {
+        clearDoNotDisturb()
+        guard !friendUserId.isEmpty else { return }
+        let friendName = friends.first(where: { $0.user_id == friendUserId })?.display_name ?? friendUserId
+        closeInteractionMenu()
+        sayLocal("我想请 \(friendName) 来家里玩。")
+        let body = VisitInvitationRequest(requester_user_id: userId, owner_user_id: friendUserId)
+        relay.post("api/visit-invitations", body: body) { [weak self] (result: Result<VisitInvitationResponse, Error>) in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let response):
+                    if let visit = response.visit, visit.status == "active" {
+                        self?.panel.setStatus("\(friendName) 来家里了")
+                        self?.log("好友宠物已接受邀请：\(visit.visit_id)")
+                    } else {
+                        self?.panel.setStatus("正在等 \(friendName) 回复")
+                        self?.log("已邀请 \(friendName) 的宠物来家里玩。")
+                    }
+                case .failure(let error):
+                    let text = error.localizedDescription
+                    let message = text.contains("正在睡觉") ? "\(friendName) 正在睡觉呢。" : "邀请失败了，等会儿再试。"
+                    self?.panel.setStatus(message)
+                    self?.sayLocal(message)
+                    self?.log("邀请好友宠物失败：\(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     private func sendVisit(to friendUserId: String, displayName: String? = nil) {
+        clearDoNotDisturb()
         guard !friendUserId.isEmpty else {
             sayLocal("我还不知道要去谁那里。")
             log("串门失败：没有选择好友。")
@@ -1605,35 +1799,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-        let body = VisitRequest(
-            pet_id: localPet.pet_id,
-            owner_user_id: userId,
-            host_user_id: friendUserId,
-            departure_context: ["mood": "curious", "intent": "play"]
-        )
-        relay.post("api/visits", body: body) { [weak self] (result: Result<VisitResponse, Error>) in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let response):
-                    self?.outgoingVisit = response.visit
-                    self?.outgoingVisitTargetName = friendName
-                    if response.visit.status == "active" {
-                        self?.panel.setStatus("\(self?.localPet.name ?? "宠物") 已出门")
-                        self?.sayLocal("对方开门啦，我出门了。")
-                        self?.showAwaySign(to: friendName)
-                    } else {
-                        self?.panel.setStatus("正在等 \(friendName) 开门")
-                        self?.sayLocal("我先敲敲门。")
+            let body = VisitRequest(
+                pet_id: self.localPet.pet_id,
+                owner_user_id: self.userId,
+                host_user_id: friendUserId,
+                departure_context: ["mood": "curious", "intent": "play"]
+            )
+            self.relay.post("api/visits", body: body) { [weak self] (result: Result<VisitResponse, Error>) in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let response):
+                        self?.outgoingVisit = response.visit
+                        self?.outgoingVisitTargetName = friendName
+                        if response.visit.status == "active" {
+                            self?.panel.setStatus("\(self?.localPet.name ?? "宠物") 已出门")
+                            self?.sayLocal("对方开门啦，我出门了。")
+                            self?.showAwaySign(to: friendName)
+                        } else {
+                            self?.panel.setStatus("正在等 \(friendName) 开门")
+                            self?.sayLocal("我先敲敲门。")
+                        }
+                        self?.log("创建串门请求：\(response.visit.visit_id)")
+                    case .failure(let error):
+                        let message = self?.visitFailureMessage(error) ?? "串门失败了。"
+                        self?.panel.setStatus(message)
+                        self?.sayLocal(message)
+                        self?.log("发起串门失败：\(error.localizedDescription)")
                     }
-                    self?.log("创建串门请求：\(response.visit.visit_id)")
-                case .failure(let error):
-                    let message = self?.visitFailureMessage(error) ?? "串门失败了。"
-                    self?.panel.setStatus(message)
-                    self?.sayLocal(message)
-                    self?.log("发起串门失败：\(error.localizedDescription)")
                 }
             }
-        }
         }
     }
 
@@ -1704,6 +1898,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let payload = try? decoder.decode(VisitStartedPayload.self, from: data) {
                 answerVisitRequest(payload)
             }
+        case "visit_invitation_requested":
+            if let payload = try? decoder.decode(VisitInvitationPayload.self, from: data) {
+                answerVisitInvitation(payload)
+            }
+        case "visit_invitation_status":
+            if let invitation = try? decoder.decode(VisitInvitation.self, from: data) {
+                if invitation.status == "declined" {
+                    panel.setStatus("对方这次不来")
+                    sayLocal("对方这次想待在家里。")
+                }
+            }
         case "visit_started":
             if let payload = try? decoder.decode(VisitStartedPayload.self, from: data) {
                 showVisitor(payload)
@@ -1756,6 +1961,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showVisitor(_ payload: VisitStartedPayload) {
         removeVisitor(visitId: payload.visit.visit_id)
+        let duplicateVisitIds = visitors
+            .filter { $0.value.visit.pet_id == payload.visit.pet_id && $0.value.visit.owner_user_id == payload.visit.owner_user_id }
+            .map { $0.key }
+        for visitId in duplicateVisitIds {
+            removeVisitor(visitId: visitId)
+        }
         panel.setHasVisitor(true)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let visitId = payload.visit.visit_id
@@ -1835,29 +2046,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func answerVisitRequest(_ payload: VisitStartedPayload) {
         if visitors.count >= maxVisitors {
-            let body = VisitDecisionRequest(user_id: userId, action: "decline")
-            relay.post("api/visits/\(payload.visit.visit_id)/decision", body: body) { [weak self] (_: Result<VisitDecisionResponse, Error>) in
-                DispatchQueue.main.async {
-                    self?.log("桌面来访宠物已满，已拒绝 \(payload.profile.name) 来串门。")
-                }
-            }
+            decideVisitRequest(payload, accept: false, logText: "桌面来访宠物已满，已拒绝 \(payload.profile.name) 来串门。")
             return
         }
-        let alert = NSAlert()
-        alert.icon = NSImage(systemSymbolName: "door.left.hand.open", accessibilityDescription: "敲门")
-        alert.messageText = "\(payload.profile.name) 在敲门"
-        alert.informativeText = "它想来你的桌面玩一会儿。当前可同时接待 \(maxVisitors) 只来访宠物。"
-        alert.addButton(withTitle: "让它进来")
-        alert.addButton(withTitle: "这次不了")
-        let accepted = alert.runModal() == .alertFirstButtonReturn
-        let body = VisitDecisionRequest(user_id: userId, action: accepted ? "accept" : "decline")
+        if isDoNotDisturbActive() {
+            decideVisitRequest(payload, accept: false, logText: "\(localPet.name) 正在勿扰睡觉，已拒绝 \(payload.profile.name) 来串门。")
+            return
+        }
+        if knockWindows[payload.visit.visit_id] != nil { return }
+        let origin = knockOrigin()
+        let window = KnockRequestWindow(
+            origin: origin,
+            petName: payload.profile.name,
+            message: "它想来你的桌面玩一会儿。",
+            onAccept: { [weak self] in
+                self?.knockWindows[payload.visit.visit_id]?.close()
+                self?.knockWindows[payload.visit.visit_id] = nil
+                self?.decideVisitRequest(payload, accept: true, logText: "已同意 \(payload.profile.name) 来串门。")
+            },
+            onDecline: { [weak self] in
+                self?.knockWindows[payload.visit.visit_id]?.close()
+                self?.knockWindows[payload.visit.visit_id] = nil
+                self?.decideVisitRequest(payload, accept: false, logText: "已拒绝 \(payload.profile.name) 来串门。")
+            }
+        )
+        knockWindows[payload.visit.visit_id] = window
+        log("\(payload.profile.name) 正在敲门。")
+    }
+
+    private func decideVisitRequest(_ payload: VisitStartedPayload, accept: Bool, logText: String) {
+        let body = VisitDecisionRequest(user_id: userId, action: accept ? "accept" : "decline")
         relay.post("api/visits/\(payload.visit.visit_id)/decision", body: body) { [weak self] (result: Result<VisitDecisionResponse, Error>) in
             DispatchQueue.main.async {
                 switch result {
                 case .success:
-                    self?.log(accepted ? "已同意 \(payload.profile.name) 来串门。" : "已拒绝 \(payload.profile.name) 来串门。")
+                    self?.log(logText)
                 case .failure(let error):
                     self?.log("回应敲门失败：\(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private func knockOrigin() -> CGPoint {
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let anchor = localWindow?.frame ?? NSRect(x: screen.maxX - 180, y: screen.minY + 140, width: 124, height: 138)
+        let x = min(max(anchor.midX - 129, screen.minX + 16), screen.maxX - 274)
+        let y = min(max(anchor.maxY + 8, screen.minY + 16), screen.maxY - 164)
+        return CGPoint(x: x, y: y)
+    }
+
+    private func answerVisitInvitation(_ payload: VisitInvitationPayload) {
+        let requesterName = payload.requester?.display_name ?? payload.invitation.requester_user_id
+        if isDoNotDisturbActive() {
+            decideVisitInvitation(payload.invitation, accept: false, requesterName: requesterName)
+            return
+        }
+        let alert = NSAlert()
+        alert.icon = NSImage(systemSymbolName: "pawprint", accessibilityDescription: "邀请")
+        alert.messageText = "\(requesterName) 邀请 \(localPet.name) 去玩"
+        alert.informativeText = "同意后，\(localPet.name) 会去对方桌面串门。"
+        alert.addButton(withTitle: "去玩")
+        alert.addButton(withTitle: "留在家")
+        let accepted = alert.runModal() == .alertFirstButtonReturn
+        decideVisitInvitation(payload.invitation, accept: accepted, requesterName: requesterName)
+    }
+
+    private func decideVisitInvitation(_ invitation: VisitInvitation, accept: Bool, requesterName: String) {
+        let body = VisitDecisionRequest(user_id: userId, action: accept ? "accept" : "decline")
+        relay.post("api/visit-invitations/\(invitation.request_id)/decision", body: body) { [weak self] (result: Result<VisitInvitationResponse, Error>) in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let response):
+                    if accept, let visit = response.visit {
+                        self?.outgoingVisit = visit
+                        self?.outgoingVisitTargetName = requesterName
+                        self?.showAwaySign(to: requesterName)
+                        self?.panel.setStatus("\(self?.localPet.name ?? "宠物") 已出门")
+                    }
+                    self?.log(accept ? "已同意去 \(requesterName) 家玩。" : "已拒绝 \(requesterName) 的邀请。")
+                case .failure(let error):
+                    self?.log("回应邀请失败：\(error.localizedDescription)")
                 }
             }
         }
@@ -2068,6 +2337,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.putLocalPetToSleep()
             }
         )
+        actions.append(PetAction(title: "勿扰") { [weak self] in
+            self?.showDoNotDisturbActions()
+        })
+        showInteractionMenu(anchor: localWindow, actions: actions)
+    }
+
+    private func showDoNotDisturbActions() {
+        guard let localWindow else { return }
+        closeInteractionMenu()
+        let actions = [
+            PetAction(title: "半小时") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.enableDoNotDisturb(minutes: 30)
+            },
+            PetAction(title: "1 小时") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.enableDoNotDisturb(minutes: 60)
+            },
+            PetAction(title: "2 小时") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.enableDoNotDisturb(minutes: 120)
+            }
+        ]
         showInteractionMenu(anchor: localWindow, actions: actions)
     }
 
@@ -2102,6 +2394,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.closeInteractionMenu()
                 self?.sayLocal("我去问问 \(friend.display_name) 在不在家。")
                 self?.sendVisit(to: friend.user_id, displayName: friend.display_name)
+            })
+            actions.append(PetAction(title: "请 \(friend.display_name) 来") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.inviteFriendPet(to: friend.user_id)
             })
         }
         if friends.isEmpty {
@@ -2155,6 +2451,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             actions.append(PetAction(title: "一起玩") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.playTogetherWithVisitor(visitId: visitId)
+            })
+        }
+        if localWindow != nil {
+            actions.append(PetAction(title: "一起睡") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.sleepTogetherWithVisitor(visitId: visitId)
             })
         }
         if capabilities.contains("return_home") {
@@ -2228,6 +2530,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func petLocalPet() {
+        clearDoNotDisturb()
         animatePettingReaction(window: localWindow)
         playLocal(.rest, returnToIdleAfter: 2.5)
         sayLocal("蹭了蹭你的手。")
@@ -2243,7 +2546,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         remember("\(localPet.name) 被你哄去睡觉了。")
     }
 
+    private func enableDoNotDisturb(minutes: Int) {
+        guard let localWindow else { return }
+        closeInteractionMenu()
+        let until = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        doNotDisturbUntil = until
+        localSleepTimer?.invalidate()
+        localRoamTimer?.invalidate()
+        localAnimationTimer?.invalidate()
+        for (_, visitor) in visitors {
+            visitor.roamTimer?.invalidate()
+        }
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let target = CGPoint(x: screen.minX + 24, y: screen.minY + 24)
+        playLocal(.move)
+        animateLocalPet(to: target, duration: localMoveDuration(from: localWindow.frame.origin, to: target, speed: 240, minimum: 0.8, maximum: 2.8)) { [weak self] in
+            guard let self else { return }
+            self.playLocal(.sleep)
+            self.sayLocal("勿扰中，我睡一会儿。")
+        }
+        panel.setStatus("勿扰到 \(DateFormatter.localizedString(from: until, dateStyle: .none, timeStyle: .short))")
+        updateDoNotDisturbRelay(until: until)
+        localSleepTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(minutes * 60), repeats: false) { [weak self] _ in
+            self?.clearDoNotDisturb()
+        }
+        remember("\(localPet.name) 开始勿扰睡觉。")
+    }
+
+    private func clearDoNotDisturb() {
+        guard doNotDisturbUntil != nil else { return }
+        doNotDisturbUntil = nil
+        localSleepTimer?.invalidate()
+        localSleepTimer = nil
+        panel.setStatus("已连接 Relay")
+        sayLocal("我醒啦。")
+        updateDoNotDisturbRelay(until: nil)
+        scheduleLocalSleep()
+        scheduleLocalRoam()
+    }
+
+    private func isDoNotDisturbActive() -> Bool {
+        guard let until = doNotDisturbUntil else { return false }
+        if Date() < until { return true }
+        clearDoNotDisturb()
+        return false
+    }
+
+    private func updateDoNotDisturbRelay(until: Date?) {
+        let formatter = ISO8601DateFormatter()
+        let body = DoNotDisturbRequest(user_id: userId, until: until.map { formatter.string(from: $0) })
+        relay.post("api/users/\(userId)/do-not-disturb", body: body) { [weak self] (result: Result<DoNotDisturbResponse, Error>) in
+            DispatchQueue.main.async {
+                if case .failure(let error) = result {
+                    self?.log("勿扰状态同步失败：\(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     private func playSignatureAction() {
+        clearDoNotDisturb()
         playLocal(.signature, returnToIdleAfter: 2.4)
         sayLocal("给你看一下。")
         remember("\(localPet.name) 给你展示了一个招牌动作。")
@@ -2473,11 +2835,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func sleepTogetherWithVisitor(visitId: String) {
+        guard let localWindow, let visitor = visitors[visitId] else {
+            log("现在没有来串门的小客人。")
+            return
+        }
+        let visitorWindow = visitor.window
+        localSleepTimer?.invalidate()
+        localRoamTimer?.invalidate()
+        localAnimationTimer?.invalidate()
+        visitor.roamTimer?.invalidate()
+        visitor.animationTimer?.invalidate()
+
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let localStart = localWindow.frame.origin
+        let visitorStart = visitorWindow.frame.origin
+        let targetX = min(max(localStart.x + 86, screen.minX + 40), screen.maxX - 170)
+        let visitorTarget = CGPoint(x: targetX, y: min(max(localStart.y, screen.minY + 70), screen.maxY - 170))
+        let duration = localMoveDuration(from: visitorStart, to: visitorTarget, speed: 260, minimum: 0.8, maximum: 2.4)
+
+        sayLocal("一起睡一会儿吧。")
+        (visitorWindow.contentView as? PetView)?.say("好呀。")
+        playLocal(.sleep)
+        playVisitorMove(visitId: visitId)
+        recordVisitEvent(
+            visitId: visitId,
+            type: "pet_to_pet.sleep_together",
+            data: [
+                "local_pet_id": localPet.pet_id,
+                "visitor_pet_id": visitor.visit.pet_id,
+                "from_x": "\(Int(visitorStart.x))",
+                "from_y": "\(Int(visitorStart.y))",
+                "to_x": "\(Int(visitorTarget.x))",
+                "to_y": "\(Int(visitorTarget.y))"
+            ]
+        )
+
+        animateVisitorPet(visitId: visitId, to: visitorTarget, duration: duration) { [weak self] in
+            self?.playLocal(.sleep)
+            self?.playVisitorSleep(visitId: visitId)
+            self?.remember("\(self?.localPet.name ?? "宠物") 和来访的小客人一起睡了一会儿。")
+        }
+    }
+
     private func playVisitorRest(visitId: String, returnToIdleAfter delay: TimeInterval? = nil) {
         guard let visitorView = visitors[visitId]?.window.contentView as? PetView else { return }
         for state in ["rest", "sit", "idle"] {
             if visitorView.animationStates[state] != nil {
                 visitorView.play(state, returnToIdleAfter: delay)
+                return
+            }
+        }
+    }
+
+    private func playVisitorSleep(visitId: String) {
+        guard let visitorView = visitors[visitId]?.window.contentView as? PetView else { return }
+        for state in ["sleep", "rest", "sit", "idle"] {
+            if visitorView.animationStates[state] != nil {
+                visitorView.play(state)
                 return
             }
         }
@@ -2511,6 +2926,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func throwBallForLocalPet() {
+        clearDoNotDisturb()
         guard let localWindow else { return }
         closeInteractionMenu()
         localSleepTimer?.invalidate()
@@ -2853,9 +3269,29 @@ struct VisitRequest: Codable {
     let departure_context: [String: String]
 }
 
+struct VisitInvitationRequest: Codable {
+    let requester_user_id: String
+    let owner_user_id: String
+}
+
+struct VisitInvitationResponse: Codable {
+    let invitation: VisitInvitation?
+    let visit: VisitSession?
+}
+
 struct VisitDecisionRequest: Codable {
     let user_id: String
     let action: String
+}
+
+struct DoNotDisturbRequest: Codable {
+    let user_id: String
+    let until: String?
+}
+
+struct DoNotDisturbResponse: Codable {
+    let user_id: String
+    let do_not_disturb_until: String?
 }
 
 struct InteractionRequest: Codable {
