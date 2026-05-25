@@ -64,6 +64,7 @@ const eventMailboxes = new Map();
 const runtimePresence = new Map();
 let eventSequence = 0;
 const onlineTimeoutMs = 6_000;
+const visitRequestTimeoutMs = 60_000;
 const counters = new Map();
 const seenUsers = new Set();
 const seenPets = new Set();
@@ -276,10 +277,11 @@ function friendSummaryFor(userId, friendId) {
 }
 
 function emitTo(userId, type, payload) {
+  const snapshot = JSON.parse(JSON.stringify(payload));
   const event = {
     id: ++eventSequence,
     type,
-    payload,
+    payload: snapshot,
     created_at: new Date().toISOString()
   };
   if (!eventMailboxes.has(userId)) eventMailboxes.set(userId, []);
@@ -289,7 +291,7 @@ function emitTo(userId, type, payload) {
 
   const streams = eventStreams.get(userId);
   if (!streams) return;
-  const frame = `id: ${event.id}\nevent: ${type}\ndata: ${JSON.stringify(payload)}\n\n`;
+  const frame = `id: ${event.id}\nevent: ${type}\ndata: ${JSON.stringify(snapshot)}\n\n`;
   for (const res of streams) {
     res.write(frame);
   }
@@ -410,7 +412,7 @@ function createMemoryReceipt(visit, reason = "departed") {
 }
 
 function finishVisit(visit, reason, actor = { type: "relay", user_id: "relay" }, data = {}) {
-  if (!visit || visit.status === "completed" || visit.status === "cancelled" || visit.status === "failed") {
+  if (!visit || visit.status === "completed" || visit.status === "cancelled" || visit.status === "declined" || visit.status === "failed") {
     return null;
   }
 
@@ -444,6 +446,21 @@ function finishVisit(visit, reason, actor = { type: "relay", user_id: "relay" },
 
 function reconcileActiveVisits() {
   for (const visit of visits.values()) {
+    if (visit.status === "pending") {
+      if (!isUserOnline(visit.host_user_id)) {
+        visit.status = "failed";
+        visit.ended_at = new Date().toISOString();
+        emitTo(visit.owner_user_id, "visit_status", visit);
+        continue;
+      }
+      if (Date.now() > new Date(visit.request_expires_at).getTime()) {
+        visit.status = "cancelled";
+        visit.ended_at = new Date().toISOString();
+        emitTo(visit.owner_user_id, "visit_status", visit);
+      }
+      continue;
+    }
+
     if (visit.status !== "active") continue;
 
     if (!isUserOnline(visit.host_user_id)) {
@@ -572,7 +589,6 @@ async function handleApi(req, res, url) {
     if (profile.owner_user_id !== owner_user_id) return sendJson(res, 403, { error: "Profile owner mismatch" });
     if (!areFriends(owner_user_id, host_user_id)) return sendJson(res, 403, { error: "Users are not friends" });
     if (!isUserOnline(host_user_id)) return sendJson(res, 409, { error: "Host Runtime is offline" });
-    if (!host.host_rules.allow_friend_auto_visit) return sendJson(res, 403, { error: "Host does not allow auto visits" });
     if (host.host_rules.blocked_pet_ids.includes(pet_id)) return sendJson(res, 403, { error: "Pet is blocked by host" });
 
     const now = Date.now();
@@ -582,16 +598,18 @@ async function handleApi(req, res, url) {
       owner_user_id,
       host_user_id,
       profile_version: profile.profile_version,
-      status: "active",
+      status: "pending",
       departure_context,
-      started_at: new Date(now).toISOString(),
+      requested_at: new Date(now).toISOString(),
+      request_expires_at: new Date(now + visitRequestTimeoutMs).toISOString(),
+      started_at: null,
       expires_at: new Date(now + host.host_rules.max_visit_minutes * 60_000).toISOString(),
       events: []
     };
 
     visits.set(visit.visit_id, visit);
-    recordAnalytics("visit_started", { owner_user_id, host_user_id, pet_id });
-    emitTo(host_user_id, "visit_started", {
+    recordAnalytics("visit_requested", { owner_user_id, host_user_id, pet_id });
+    emitTo(host_user_id, "visit_requested", {
       visit,
       profile: safePetProfile(profile),
       animation_states: profile.animation_states || null,
@@ -602,10 +620,58 @@ async function handleApi(req, res, url) {
     return sendJson(res, 201, { visit });
   }
 
+  const decisionMatch = url.pathname.match(/^\/api\/visits\/([^/]+)\/decision$/);
+  if (req.method === "POST" && decisionMatch) {
+    const visit = visits.get(decisionMatch[1]);
+    if (!visit) return sendJson(res, 404, { error: "Visit not found" });
+    const body = await readBody(req);
+    if (body.user_id !== visit.host_user_id) return sendJson(res, 403, { error: "Only the host can answer the door" });
+    if (visit.status !== "pending") return sendJson(res, 409, { error: "Visit request is no longer pending", visit });
+
+    if (body.action === "decline") {
+      visit.status = "declined";
+      visit.ended_at = new Date().toISOString();
+      recordAnalytics("visit_declined", {
+        owner_user_id: visit.owner_user_id,
+        host_user_id: visit.host_user_id,
+        pet_id: visit.pet_id
+      });
+      emitTo(visit.owner_user_id, "visit_status", visit);
+      return sendJson(res, 200, { visit });
+    }
+
+    if (body.action !== "accept") return sendJson(res, 400, { error: "action must be accept or decline" });
+
+    const profile = profiles.get(visit.pet_id);
+    const host = users.get(visit.host_user_id);
+    if (!profile || !host) return sendJson(res, 409, { error: "Visit cannot start now" });
+    if (!isUserOnline(visit.host_user_id)) return sendJson(res, 409, { error: "Host Runtime is offline" });
+
+    const now = Date.now();
+    visit.status = "active";
+    visit.started_at = new Date(now).toISOString();
+    visit.expires_at = new Date(now + host.host_rules.max_visit_minutes * 60_000).toISOString();
+    recordAnalytics("visit_started", {
+      owner_user_id: visit.owner_user_id,
+      host_user_id: visit.host_user_id,
+      pet_id: visit.pet_id
+    });
+    emitTo(visit.host_user_id, "visit_started", {
+      visit,
+      profile: safePetProfile(profile),
+      animation_states: profile.animation_states || null,
+      asset_blobs: profile.asset_blobs || {},
+      host_rules: host.host_rules
+    });
+    emitTo(visit.owner_user_id, "visit_status", visit);
+    return sendJson(res, 200, { visit });
+  }
+
   const eventMatch = url.pathname.match(/^\/api\/visits\/([^/]+)\/events$/);
   if (req.method === "POST" && eventMatch) {
     const visit = visits.get(eventMatch[1]);
     if (!visit) return sendJson(res, 404, { error: "Visit not found" });
+    if (visit.status !== "active") return sendJson(res, 409, { error: "Visit is not active" });
     const body = await readBody(req);
     if (body.type === "message" && !cleanMessageText(body.data?.text)) {
       return sendJson(res, 400, { error: "message text is required" });
@@ -637,6 +703,13 @@ async function handleApi(req, res, url) {
     const visit = visits.get(endMatch[1]);
     if (!visit) return sendJson(res, 404, { error: "Visit not found" });
     const body = await readBody(req);
+    if (visit.status === "pending") {
+      visit.status = "cancelled";
+      visit.ended_at = new Date().toISOString();
+      emitTo(visit.owner_user_id, "visit_status", visit);
+      emitTo(visit.host_user_id, "visit_status", visit);
+      return sendJson(res, 200, { visit, receipt: null });
+    }
     const result = finishVisit(
       visit,
       body.reason || "departed",

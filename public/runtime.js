@@ -203,9 +203,14 @@ async function sendVisit() {
     })
   });
   state.localVisit = visit;
-  $("#visit-status").textContent = `${state.localPet.name} 已出发去 ${friendId} 的桌面。`;
-  addLifeLog(`${state.localPet.name} 出门去 ${friendId} 的桌面串门。`);
-  addProtocolLog(`创建 VisitSession：${visit.visit_id}`);
+  $("#visit-status").textContent =
+    visit.status === "active"
+      ? `${state.localPet.name} 已出发去 ${friendId} 的桌面。`
+      : `${state.localPet.name} 正在等 ${friendId} 开门。`;
+  if (visit.status === "active") {
+    addLifeLog(`${state.localPet.name} 出门去 ${friendId} 的桌面串门。`);
+  }
+  addProtocolLog(`创建 VisitSession：${visit.visit_id} (${visit.status})`);
 }
 
 async function recordVisitEvent(visitId, type, data) {
@@ -263,6 +268,20 @@ function handleVisitStarted(payload) {
   addProtocolLog(`收到 VisitSession：${visit.visit_id}`);
 }
 
+async function handleVisitRequested(payload) {
+  const { visit, profile } = payload;
+  addProtocolLog(`${profile.name} 正在敲门：${visit.visit_id}`);
+  const accepted = window.confirm(`${profile.name} 想来你的桌面玩一会儿，要让它进来吗？`);
+  await api(`/api/visits/${visit.visit_id}/decision`, {
+    method: "POST",
+    body: JSON.stringify({
+      user_id: userId,
+      action: accepted ? "accept" : "decline"
+    })
+  });
+  addProtocolLog(accepted ? `已同意 ${profile.name} 来串门` : `已拒绝 ${profile.name} 来串门`);
+}
+
 function handleMemoryReceipt(receipt) {
   $("#visit-status").textContent = `${state.localPet.name} 回家了。`;
   addLifeLog(receipt.life_log_entry);
@@ -287,9 +306,16 @@ function connectEvents() {
   source.addEventListener("visit_started", (event) => {
     handleVisitStarted(JSON.parse(event.data));
   });
+  source.addEventListener("visit_requested", (event) => {
+    handleVisitRequested(JSON.parse(event.data)).catch((error) => addProtocolLog(`回应敲门失败：${error.message}`));
+  });
   source.addEventListener("visit_status", (event) => {
     const visit = JSON.parse(event.data);
     addProtocolLog(`串门状态：${visit.status}`);
+    if (state.localVisit?.visit_id === visit.visit_id && ["cancelled", "declined", "failed"].includes(visit.status)) {
+      state.localVisit = null;
+      $("#visit-status").textContent = visit.status === "declined" ? "对方这次没开门。" : "串门取消了。";
+    }
   });
   source.addEventListener("interaction_event", (event) => {
     const interaction = JSON.parse(event.data);
