@@ -1164,7 +1164,10 @@ final class PetView: NSView {
             attributes: attributes
         )
         let bubbleHeight = min(88, Swift.max(32, rect.height + 14))
-        let bubbleRect = NSRect(x: (bounds.width - bubbleWidth) / 2, y: bounds.height - bubbleHeight - 6, width: bubbleWidth, height: bubbleHeight)
+        let bubbleTopPadding: CGFloat = 6
+        let bubbleBottomNearPet: CGFloat = 118
+        let bubbleY = min(bounds.height - bubbleHeight - bubbleTopPadding, bubbleBottomNearPet)
+        let bubbleRect = NSRect(x: (bounds.width - bubbleWidth) / 2, y: bubbleY, width: bubbleWidth, height: bubbleHeight)
         let path = NSBezierPath(roundedRect: bubbleRect, xRadius: 8, yRadius: 8)
         NSColor.white.withAlphaComponent(0.96).setFill()
         path.fill()
