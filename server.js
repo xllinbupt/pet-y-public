@@ -321,6 +321,42 @@ function friendSummaryFor(userId, friendId) {
   return friendSummaries(userId).find((friend) => friend.user_id === friendId) || null;
 }
 
+function isExpiredAt(value) {
+  return Boolean(value && Date.now() > new Date(value).getTime());
+}
+
+function isDeliverableMailboxEvent(event) {
+  if (event.type === "visit_requested") {
+    const visitId = event.payload?.visit?.visit_id;
+    const visit = visitId ? visits.get(visitId) : null;
+    if (!visit || visit.status !== "pending") return false;
+
+    if (isExpiredAt(visit.request_expires_at)) {
+      visit.status = "cancelled";
+      visit.ended_at = new Date().toISOString();
+      emitTo(visit.owner_user_id, "visit_status", visit);
+      emitTo(visit.host_user_id, "visit_status", visit);
+      return false;
+    }
+
+    return true;
+  }
+
+  if (event.type !== "visit_invitation_requested") return true;
+
+  const requestId = event.payload?.invitation?.request_id;
+  const invitation = requestId ? visitInvitations.get(requestId) : null;
+  if (!invitation || invitation.status !== "pending") return false;
+
+  if (isExpiredAt(invitation.expires_at)) {
+    invitation.status = "expired";
+    invitation.ended_at = new Date().toISOString();
+    return false;
+  }
+
+  return true;
+}
+
 function emitTo(userId, type, payload) {
   const snapshot = JSON.parse(JSON.stringify(payload));
   const event = {
@@ -561,12 +597,14 @@ function reconcileActiveVisits() {
         visit.status = "failed";
         visit.ended_at = new Date().toISOString();
         emitTo(visit.owner_user_id, "visit_status", visit);
+        emitTo(visit.host_user_id, "visit_status", visit);
         continue;
       }
       if (Date.now() > new Date(visit.request_expires_at).getTime()) {
         visit.status = "cancelled";
         visit.ended_at = new Date().toISOString();
         emitTo(visit.owner_user_id, "visit_status", visit);
+        emitTo(visit.host_user_id, "visit_status", visit);
       }
       continue;
     }
@@ -623,7 +661,7 @@ async function handleApi(req, res, url) {
     countMetric("events_poll");
     const mailbox = eventMailboxes.get(userId) || [];
     return sendJson(res, 200, {
-      events: mailbox.filter((event) => event.id > after),
+      events: mailbox.filter((event) => event.id > after && isDeliverableMailboxEvent(event)),
       friends: friendSummaries(userId)
     });
   }
@@ -728,6 +766,11 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     if (body.user_id !== invitation.owner_user_id) return sendJson(res, 403, { error: "Only the pet owner can answer the invitation" });
     if (invitation.status !== "pending") return sendJson(res, 409, { error: "Visit invitation is no longer pending", invitation });
+    if (isExpiredAt(invitation.expires_at)) {
+      invitation.status = "expired";
+      invitation.ended_at = new Date().toISOString();
+      return sendJson(res, 409, { error: "Visit invitation expired", invitation });
+    }
     const owner = users.get(invitation.owner_user_id);
     const requester = users.get(invitation.requester_user_id);
     const profile = profiles.get(invitation.pet_id);
@@ -827,6 +870,13 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     if (body.user_id !== visit.host_user_id) return sendJson(res, 403, { error: "Only the host can answer the door" });
     if (visit.status !== "pending") return sendJson(res, 409, { error: "Visit request is no longer pending", visit });
+    if (isExpiredAt(visit.request_expires_at)) {
+      visit.status = "cancelled";
+      visit.ended_at = new Date().toISOString();
+      emitTo(visit.owner_user_id, "visit_status", visit);
+      emitTo(visit.host_user_id, "visit_status", visit);
+      return sendJson(res, 409, { error: "Visit request expired", visit });
+    }
 
     if (body.action === "decline") {
       visit.status = "declined";

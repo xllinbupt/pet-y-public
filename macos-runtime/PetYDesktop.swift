@@ -90,6 +90,7 @@ struct VisitInvitation: Codable {
     let pet_id: String
     let status: String
     let visit_id: String?
+    let expires_at: String?
 }
 
 struct VisitInvitationPayload: Codable {
@@ -110,6 +111,8 @@ struct VisitSession: Codable {
     let host_user_id: String
     let profile_version: Int
     let status: String
+    let requested_at: String?
+    let request_expires_at: String?
 }
 
 struct VisitStartedPayload: Codable {
@@ -688,15 +691,27 @@ final class BallView: NSView {
 
 struct PetAction {
     let title: String
+    let isEnabled: Bool
     let handler: () -> Void
+
+    init(title: String, isEnabled: Bool = true, handler: @escaping () -> Void) {
+        self.title = title
+        self.isEnabled = isEnabled
+        self.handler = handler
+    }
+}
+
+enum InteractionMenuLayout {
+    case horizontal
+    case vertical
 }
 
 final class InteractionMenuWindow: NSWindow {
-    init(origin: CGPoint, actions: [PetAction]) {
-        let buttonWidths = InteractionMenuView.buttonWidths(for: actions)
-        let width = InteractionMenuView.menuWidth(for: buttonWidths)
+    init(origin: CGPoint, actions: [PetAction], layout: InteractionMenuLayout = .horizontal) {
+        let buttonWidths = InteractionMenuView.buttonWidths(for: actions, layout: layout)
+        let size = InteractionMenuView.menuSize(for: buttonWidths, layout: layout)
         super.init(
-            contentRect: NSRect(x: origin.x, y: origin.y, width: width, height: 48),
+            contentRect: NSRect(x: origin.x, y: origin.y, width: size.width, height: size.height),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -707,7 +722,12 @@ final class InteractionMenuWindow: NSWindow {
         hasShadow = true
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        contentView = InteractionMenuView(frame: NSRect(x: 0, y: 0, width: width, height: 48), actions: actions, buttonWidths: buttonWidths)
+        contentView = InteractionMenuView(
+            frame: NSRect(x: 0, y: 0, width: size.width, height: size.height),
+            actions: actions,
+            buttonWidths: buttonWidths,
+            layout: layout
+        )
         makeKeyAndOrderFront(nil)
     }
 }
@@ -715,48 +735,104 @@ final class InteractionMenuWindow: NSWindow {
 final class InteractionMenuView: NSView {
     let actions: [PetAction]
     let buttonWidths: [CGFloat]
+    let layout: InteractionMenuLayout
 
-    static func buttonWidths(for actions: [PetAction]) -> [CGFloat] {
+    static func buttonWidths(for actions: [PetAction], layout: InteractionMenuLayout = .horizontal) -> [CGFloat] {
         actions.map { action in
-            max(50, CGFloat(action.title.count) * 13 + 26)
+            let base: CGFloat = layout == .vertical ? 12 : 13
+            let padding: CGFloat = layout == .vertical ? 30 : 26
+            let minWidth: CGFloat = layout == .vertical ? 78 : 50
+            return max(minWidth, CGFloat(action.title.count) * base + padding)
         }
     }
 
-    static func menuWidth(for buttonWidths: [CGFloat]) -> CGFloat {
-        buttonWidths.reduce(16, +) + CGFloat(max(0, buttonWidths.count - 1) * 8)
+    static func menuSize(for buttonWidths: [CGFloat], layout: InteractionMenuLayout = .horizontal) -> CGSize {
+        switch layout {
+        case .horizontal:
+            let width = buttonWidths.reduce(16, +) + CGFloat(max(0, buttonWidths.count - 1) * 8)
+            return CGSize(width: width, height: 48)
+        case .vertical:
+            let width = min(max(buttonWidths.max() ?? 120, 120), 240) + 16
+            let height = CGFloat(buttonWidths.count) * 34 + CGFloat(max(0, buttonWidths.count - 1) * 8) + 16
+            return CGSize(width: width, height: height)
+        }
     }
 
-    init(frame frameRect: NSRect, actions: [PetAction], buttonWidths: [CGFloat]) {
+    init(frame frameRect: NSRect, actions: [PetAction], buttonWidths: [CGFloat], layout: InteractionMenuLayout = .horizontal) {
         self.actions = actions
         self.buttonWidths = buttonWidths
+        self.layout = layout
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
-        var x: CGFloat = 8
-        for (index, action) in actions.enumerated() {
-            let button = NSButton(title: action.title, target: self, action: #selector(actionTapped(_:)))
-            button.tag = index
-            button.isBordered = false
-            button.wantsLayer = true
-            button.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.96).cgColor
-            button.layer?.cornerRadius = 8
-            button.layer?.borderWidth = 1
-            button.layer?.borderColor = NSColor.black.withAlphaComponent(0.14).cgColor
-            button.font = .systemFont(ofSize: 12, weight: .semibold)
-            button.contentTintColor = NSColor.black
-            button.attributedTitle = NSAttributedString(
-                string: action.title,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                    .foregroundColor: NSColor.black
-                ]
-            )
-            let width = buttonWidths[index]
-            button.frame = NSRect(x: x, y: 8, width: width, height: 30)
-            addSubview(button)
-            x += width + 8
+        switch layout {
+        case .horizontal:
+            var x: CGFloat = 8
+            for (index, action) in actions.enumerated() {
+                let button = NSButton(title: action.title, target: self, action: #selector(actionTapped(_:)))
+                button.tag = index
+                button.isBordered = false
+                button.wantsLayer = true
+                button.isEnabled = action.isEnabled
+                button.layer?.backgroundColor = buttonBackgroundColor(for: action).cgColor
+                button.layer?.cornerRadius = 8
+                button.layer?.borderWidth = 1
+                button.layer?.borderColor = buttonBorderColor(for: action).cgColor
+                button.font = .systemFont(ofSize: 12, weight: .semibold)
+                button.contentTintColor = buttonTextColor(for: action)
+                button.attributedTitle = NSAttributedString(
+                    string: action.title,
+                    attributes: [
+                        .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                        .foregroundColor: buttonTextColor(for: action)
+                    ]
+                )
+                let width = buttonWidths[index]
+                button.frame = NSRect(x: x, y: 8, width: width, height: 30)
+                addSubview(button)
+                x += width + 8
+            }
+        case .vertical:
+            let availableWidth = frameRect.width - 16
+            var y = frameRect.height - 8 - 30
+            for (index, action) in actions.enumerated() {
+                let button = NSButton(title: action.title, target: self, action: #selector(actionTapped(_:)))
+                button.tag = index
+                button.isBordered = false
+                button.wantsLayer = true
+                button.isEnabled = action.isEnabled
+                button.layer?.backgroundColor = buttonBackgroundColor(for: action).cgColor
+                button.layer?.cornerRadius = 8
+                button.layer?.borderWidth = 1
+                button.layer?.borderColor = buttonBorderColor(for: action).cgColor
+                button.font = .systemFont(ofSize: 12, weight: .semibold)
+                button.contentTintColor = buttonTextColor(for: action)
+                button.attributedTitle = NSAttributedString(
+                    string: action.title,
+                    attributes: [
+                        .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                        .foregroundColor: buttonTextColor(for: action)
+                    ]
+                )
+                let width = min(buttonWidths[index], availableWidth)
+                button.frame = NSRect(x: 8, y: y, width: width, height: 30)
+                addSubview(button)
+                y -= 38
+            }
         }
+    }
+
+    private func buttonBackgroundColor(for action: PetAction) -> NSColor {
+        action.isEnabled ? NSColor.white.withAlphaComponent(0.96) : NSColor.white.withAlphaComponent(0.48)
+    }
+
+    private func buttonBorderColor(for action: PetAction) -> NSColor {
+        action.isEnabled ? NSColor.black.withAlphaComponent(0.14) : NSColor.black.withAlphaComponent(0.07)
+    }
+
+    private func buttonTextColor(for action: PetAction) -> NSColor {
+        action.isEnabled ? NSColor.black : NSColor.black.withAlphaComponent(0.36)
     }
 
     required init?(coder: NSCoder) {
@@ -765,6 +841,7 @@ final class InteractionMenuView: NSView {
 
     @objc private func actionTapped(_ sender: NSButton) {
         guard actions.indices.contains(sender.tag) else { return }
+        guard actions[sender.tag].isEnabled else { return }
         actions[sender.tag].handler()
     }
 
@@ -1197,6 +1274,7 @@ final class ControlPanel: NSObject {
     var onDoNotDisturb: ((Int) -> Void)?
     var onCheckUpdate: (() -> Void)?
     var onOpenUpdate: (() -> Void)?
+    var onQuit: (() -> Void)?
 
     override init() {
         super.init()
@@ -1343,7 +1421,7 @@ final class ControlPanel: NSObject {
     @objc private func doNotDisturbTapped(_ sender: NSMenuItem) { onDoNotDisturb?(sender.representedObject as? Int ?? 30) }
     @objc private func checkUpdateTapped() { onCheckUpdate?() }
     @objc private func openUpdateTapped() { onOpenUpdate?() }
-    @objc private func quitTapped() { NSApp.terminate(nil) }
+    @objc private func quitTapped() { onQuit?() ?? NSApp.terminate(nil) }
 }
 
 final class PasteFriendlyTextField: NSTextField {
@@ -1403,6 +1481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var localRoamTimer: Timer?
     var localAnimationTimer: Timer?
     var visitorPairTimer: Timer?
+    var knockExpiryTimers: [String: Timer] = [:]
     var latestRuntimeReleaseURL: URL?
     var doNotDisturbUntil: Date?
 
@@ -1415,6 +1494,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let lifePackPath = AppDelegate.value(after: "--life-pack", in: args)
         userId = user
         identity = commandUser == nil ? localIdentity : LocalIdentity(user_id: user, display_name: user)
+        answeredVisitInvitationIds = Set(UserDefaults.standard.stringArray(forKey: "answeredVisitInvitationIds:\(user)") ?? [])
         relay = RelayClient(baseURL: URL(string: relayURL)!)
         lifePack = PetLifePackLoader.load(for: user, lifePackPath: lifePackPath)
         animationResolver = AnimationResolver(states: lifePack.pack.animation_states ?? [:])
@@ -1438,6 +1518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onDoNotDisturb = { [weak self] minutes in self?.enableDoNotDisturb(minutes: minutes) }
         panel.onCheckUpdate = { [weak self] in self?.checkForRuntimeUpdate(silent: false) }
         panel.onOpenUpdate = { [weak self] in self?.openRuntimeReleasePage() }
+        panel.onQuit = { [weak self] in self?.quitFromMenu() }
 
         restorePersistentLogToPanel()
         createLocalPet()
@@ -1446,6 +1527,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    private func quitFromMenu() {
+        stopLaunchAgentsForUserQuit()
+        NSApp.terminate(nil)
+    }
+
+    private func stopLaunchAgentsForUserQuit() {
+        let uid = String(getuid())
+        let launchAgentDir = NSHomeDirectory() + "/Library/LaunchAgents"
+        let commands = [
+            ["remove", "com.pety.desktop"],
+            ["remove", "com.pety.runtime"],
+            ["bootout", "gui/\(uid)", "\(launchAgentDir)/com.pety.desktop.plist"],
+            ["bootout", "gui/\(uid)", "\(launchAgentDir)/com.pety.runtime.plist"]
+        ]
+        for command in commands {
+            runLaunchctl(command)
+        }
+    }
+
+    private func runLaunchctl(_ arguments: [String]) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return
+        }
     }
 
     private func createLocalPet() {
@@ -1946,9 +2060,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 showVisitor(payload)
             }
         case "visit_status":
-            if let visit = try? decoder.decode(VisitSession.self, from: data),
-               visit.owner_user_id == userId {
-                handleOutgoingVisitStatus(visit)
+            if let visit = try? decoder.decode(VisitSession.self, from: data) {
+                if visit.owner_user_id == userId {
+                    handleOutgoingVisitStatus(visit)
+                }
+                if visit.host_user_id == userId {
+                    handleIncomingVisitStatus(visit)
+                }
             }
         case "friend_added":
             if let payload = try? decoder.decode(FriendAddedPayload.self, from: data),
@@ -2076,7 +2194,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func handleIncomingVisitStatus(_ visit: VisitSession) {
+        guard visit.status != "pending" else { return }
+        closeKnockWindow(visitId: visit.visit_id)
+    }
+
     private func answerVisitRequest(_ payload: VisitStartedPayload) {
+        guard payload.visit.status == "pending",
+              !isExpiredVisitRequest(payload.visit) else { return }
         if visitors.count >= maxVisitors {
             decideVisitRequest(payload, accept: false, logText: "桌面来访宠物已满，已拒绝 \(payload.profile.name) 来串门。")
             return
@@ -2092,18 +2217,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             petName: payload.profile.name,
             message: "它想来你的桌面玩一会儿。",
             onAccept: { [weak self] in
-                self?.knockWindows[payload.visit.visit_id]?.close()
-                self?.knockWindows[payload.visit.visit_id] = nil
+                self?.closeKnockWindow(visitId: payload.visit.visit_id)
                 self?.decideVisitRequest(payload, accept: true, logText: "已同意 \(payload.profile.name) 来串门。")
             },
             onDecline: { [weak self] in
-                self?.knockWindows[payload.visit.visit_id]?.close()
-                self?.knockWindows[payload.visit.visit_id] = nil
+                self?.closeKnockWindow(visitId: payload.visit.visit_id)
                 self?.decideVisitRequest(payload, accept: false, logText: "已拒绝 \(payload.profile.name) 来串门。")
             }
         )
         knockWindows[payload.visit.visit_id] = window
+        scheduleKnockExpiry(for: payload.visit)
         log("\(payload.profile.name) 正在敲门。")
+    }
+
+    private func closeKnockWindow(visitId: String) {
+        knockWindows[visitId]?.close()
+        knockWindows[visitId] = nil
+        knockExpiryTimers[visitId]?.invalidate()
+        knockExpiryTimers[visitId] = nil
+    }
+
+    private func scheduleKnockExpiry(for visit: VisitSession) {
+        guard let expiresAt = visit.request_expires_at,
+              let expiry = ISO8601DateFormatter().date(from: expiresAt) else { return }
+        let interval = max(0, expiry.timeIntervalSinceNow)
+        knockExpiryTimers[visit.visit_id]?.invalidate()
+        knockExpiryTimers[visit.visit_id] = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.closeKnockWindow(visitId: visit.visit_id)
+        }
+    }
+
+    private func isExpiredVisitRequest(_ visit: VisitSession) -> Bool {
+        guard let expiresAt = visit.request_expires_at,
+              let expiry = ISO8601DateFormatter().date(from: expiresAt) else { return false }
+        return Date() > expiry
     }
 
     private func decideVisitRequest(_ payload: VisitStartedPayload, accept: Bool, logText: String) {
@@ -2130,7 +2277,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func answerVisitInvitation(_ payload: VisitInvitationPayload) {
         let requestId = payload.invitation.request_id
-        guard !activeVisitInvitationIds.contains(requestId),
+        guard payload.invitation.status == "pending",
+              !isExpiredVisitInvitation(payload.invitation),
+              !activeVisitInvitationIds.contains(requestId),
               !answeredVisitInvitationIds.contains(requestId) else { return }
         activeVisitInvitationIds.insert(requestId)
         let requesterName = payload.requester?.display_name ?? payload.invitation.requester_user_id
@@ -2148,8 +2297,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         decideVisitInvitation(payload.invitation, accept: accepted, requesterName: requesterName)
     }
 
+    private func isExpiredVisitInvitation(_ invitation: VisitInvitation) -> Bool {
+        guard let expiresAt = invitation.expires_at,
+              let expiry = ISO8601DateFormatter().date(from: expiresAt) else { return false }
+        return Date() > expiry
+    }
+
     private func decideVisitInvitation(_ invitation: VisitInvitation, accept: Bool, requesterName: String) {
-        answeredVisitInvitationIds.insert(invitation.request_id)
+        markVisitInvitationAnswered(invitation.request_id)
         let body = VisitDecisionRequest(user_id: userId, action: accept ? "accept" : "decline")
         relay.post("api/visit-invitations/\(invitation.request_id)/decision", body: body) { [weak self] (result: Result<VisitInvitationResponse, Error>) in
             DispatchQueue.main.async {
@@ -2168,6 +2323,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private func markVisitInvitationAnswered(_ requestId: String) {
+        answeredVisitInvitationIds.insert(requestId)
+        if answeredVisitInvitationIds.count > 300 {
+            answeredVisitInvitationIds = Set(answeredVisitInvitationIds.sorted().suffix(200))
+        }
+        UserDefaults.standard.set(Array(answeredVisitInvitationIds), forKey: "answeredVisitInvitationIds:\(userId)")
     }
 
     private func materializeVisitorAssets(_ payload: VisitStartedPayload) -> URL? {
@@ -2411,9 +2574,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.showFriendActionPicker(friend)
                 })
             } else {
-                actions.append(PetAction(title: "\(friend.display_name) 不在家") { [weak self] in
-                    self?.sayLocal("\(friend.display_name) 现在不在家。")
-                })
+                actions.append(PetAction(title: "\(friend.display_name) 不在家", isEnabled: false) {})
             }
         }
         actions.append(PetAction(title: "发邀请") { [weak self] in
@@ -2544,18 +2705,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return capabilities
     }
 
-    private func menuOrigin(for petFrame: NSRect, actions: [PetAction]) -> CGPoint {
-        let width = InteractionMenuView.menuWidth(for: InteractionMenuView.buttonWidths(for: actions))
-        return menuOrigin(for: petFrame, menuWidth: width)
+    private func menuOrigin(for petFrame: NSRect, actions: [PetAction], layout: InteractionMenuLayout = .horizontal) -> CGPoint {
+        let size = InteractionMenuView.menuSize(for: InteractionMenuView.buttonWidths(for: actions, layout: layout), layout: layout)
+        return menuOrigin(for: petFrame, menuSize: size)
     }
 
-    private func menuOrigin(for petFrame: NSRect, menuWidth: CGFloat) -> CGPoint {
-        CGPoint(x: petFrame.midX - menuWidth / 2, y: petFrame.minY - 52)
+    private func menuOrigin(for petFrame: NSRect, menuSize: CGSize) -> CGPoint {
+        CGPoint(x: petFrame.midX - menuSize.width / 2, y: petFrame.minY - menuSize.height - 12)
     }
 
-    private func showInteractionMenu(anchor: PetWindow, actions: [PetAction]) {
+    private func showInteractionMenu(anchor: PetWindow, actions: [PetAction], layout: InteractionMenuLayout = .horizontal) {
         closeInteractionMenu()
-        let menu = InteractionMenuWindow(origin: menuOrigin(for: anchor.frame, actions: actions), actions: actions)
+        let menu = InteractionMenuWindow(origin: menuOrigin(for: anchor.frame, actions: actions, layout: layout), actions: actions, layout: layout)
         interactionMenuWindow = menu
         interactionMenuAnchorWindow = anchor
         startInteractionMenuFollowTimer()
@@ -2571,7 +2732,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.closeInteractionMenu()
                 return
             }
-            let origin = self.menuOrigin(for: anchor.frame, menuWidth: menu.frame.width)
+            let origin = self.menuOrigin(for: anchor.frame, menuSize: menu.frame.size)
             if abs(menu.frame.origin.x - origin.x) > 0.5 || abs(menu.frame.origin.y - origin.y) > 0.5 {
                 menu.setFrameOrigin(origin)
             }
@@ -2826,8 +2987,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             visitorWindow.animator().setFrameOrigin(visitorTarget)
         } completionHandler: { [weak self] in
             guard let self else { return }
-            self.playLocal(.rest, returnToIdleAfter: 2.8)
-            self.playVisitorRest(visitId: visitId, returnToIdleAfter: 2.8)
+            self.playLocal(.rest, returnToIdleAfter: 8.0)
+            self.playVisitorRest(visitId: visitId, returnToIdleAfter: 8.0)
             self.remember("\(self.localPet.name) 和来访的小客人靠在一起坐了一会儿。")
             self.scheduleLocalRoam()
             self.scheduleLocalSleep()
