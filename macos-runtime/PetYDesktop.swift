@@ -1032,6 +1032,55 @@ final class PetView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Let clicks pass through the transparent parts of the pet window.
+        guard isInteractivePoint(point) else { return nil }
+        return super.hitTest(point)
+    }
+
+    private func isInteractivePoint(_ point: NSPoint) -> Bool {
+        if bubbleHitRect()?.contains(point) == true { return true }
+        return petHitRect().contains(point)
+    }
+
+    private func petHitRect() -> NSRect {
+        if animationImage != nil {
+            let spriteSize = 64 * renderScale
+            return NSRect(
+                x: (bounds.width - spriteSize) / 2,
+                y: 28 + (64 - spriteSize) / 2,
+                width: spriteSize,
+                height: spriteSize
+            ).insetBy(dx: -10, dy: -10)
+        }
+
+        return NSRect(x: (bounds.width - 96) / 2, y: 20, width: 96, height: 100)
+    }
+
+    private func bubbleHitRect() -> NSRect? {
+        guard let bubble else { return nil }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NSColor.black,
+            .paragraphStyle: paragraph
+        ]
+        let bubbleWidth = min(bounds.width - 12, 208)
+        let limit = NSSize(width: bubbleWidth - 16, height: 76)
+        let rect = NSString(string: bubble).boundingRect(
+            with: limit,
+            options: [.usesLineFragmentOrigin],
+            attributes: attributes
+        )
+        let bubbleHeight = min(88, Swift.max(32, rect.height + 14))
+        let bubbleTopPadding: CGFloat = 6
+        let bubbleBottomNearPet: CGFloat = 118
+        let bubbleY = min(bounds.height - bubbleHeight - bubbleTopPadding, bubbleBottomNearPet)
+        return NSRect(x: (bounds.width - bubbleWidth) / 2, y: bubbleY, width: bubbleWidth, height: bubbleHeight)
+    }
+
     override func mouseDown(with event: NSEvent) {
         if event.type == .rightMouseDown || event.modifierFlags.contains(.control) {
             onAlternateClick?()

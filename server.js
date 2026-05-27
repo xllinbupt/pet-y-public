@@ -982,7 +982,6 @@ function serveStatic(req, res, url) {
 
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === "/") pathname = "/index.html";
-  if (pathname === "/alice" || pathname === "/bob") pathname = "/runtime.html";
 
   const filePath = path.normalize(path.join(publicDir, pathname));
   if (!filePath.startsWith(publicDir)) {
@@ -1045,6 +1044,4 @@ setInterval(reconcileActiveVisits, 2_000);
 
 server.listen(port, host, () => {
   console.log(`Pet Y MVP running at http://${host}:${port}`);
-  console.log(`Alice runtime: http://${host}:${port}/alice?user=alice`);
-  console.log(`Bob runtime:   http://${host}:${port}/bob?user=bob`);
 });

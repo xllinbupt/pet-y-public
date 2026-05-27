@@ -3,6 +3,9 @@
 bin/
 dist/
 data/*.jsonl
+data/relay-state.json
+icon.png
+life-packs/*/assets/*.before-size-fix.png
 node_modules/
 npm-debug.log*
 yarn-debug.log*
@@ -10,3 +13,4 @@ yarn-error.log*
 .env
 .env.*
 .vercel
+.alma-snapshots

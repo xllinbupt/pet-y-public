@@ -4,6 +4,7 @@ import path from "node:path";
 
 const relaySsh = process.env.PET_Y_RELAY_SSH || "root@47.99.98.43";
 const analyticsPath = process.env.PET_Y_REMOTE_ANALYTICS_PATH || "/opt/pet-y/data/analytics.jsonl";
+const relayStatePath = process.env.PET_Y_REMOTE_STATE_PATH || "/opt/pet-y/data/relay-state.json";
 const snapshotPath = process.env.PET_Y_USAGE_SNAPSHOT_PATH || path.join("data", "usage-monitor-snapshots.jsonl");
 const timeZone = "Asia/Shanghai";
 
@@ -11,7 +12,9 @@ function remoteRead() {
   const script = [
     "curl -fsS http://127.0.0.1:8787/api/admin/stats",
     "printf '\\n---PET_Y_ANALYTICS---\\n'",
-    `cat ${shellQuote(analyticsPath)} 2>/dev/null || true`
+    `cat ${shellQuote(analyticsPath)} 2>/dev/null || true`,
+    "printf '\\n---PET_Y_RELAY_STATE---\\n'",
+    `cat ${shellQuote(relayStatePath)} 2>/dev/null || true`
   ].join(" && ");
   const result = spawnSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", relaySsh, script], {
     encoding: "utf8",
@@ -20,10 +23,12 @@ function remoteRead() {
   if (result.status !== 0) {
     throw new Error((result.stderr || result.stdout || "无法读取 Relay 统计").trim());
   }
-  const [statsText, analyticsText = ""] = result.stdout.split("\n---PET_Y_ANALYTICS---\n");
+  const [statsText, remainder = ""] = result.stdout.split("\n---PET_Y_ANALYTICS---\n");
+  const [analyticsText = "", relayStateText = ""] = remainder.split("\n---PET_Y_RELAY_STATE---\n");
   return {
     stats: JSON.parse(statsText),
-    events: analyticsText.split("\n").filter(Boolean).map((line) => JSON.parse(line))
+    events: analyticsText.split("\n").filter(Boolean).map((line) => JSON.parse(line)),
+    relayState: relayStateText.trim() ? JSON.parse(relayStateText) : null
   };
 }
 
@@ -152,7 +157,62 @@ function topEntries(map, limit = 5) {
     .join("，") || "暂无";
 }
 
-function report(current, previous) {
+function formatTable(headers, rows) {
+  const widths = headers.map((header, index) =>
+    Math.max(header.length, ...rows.map((row) => String(row[index] ?? "").length))
+  );
+  const formatRow = (row) => row.map((cell, index) => String(cell ?? "").padEnd(widths[index], " ")).join(" | ");
+  return [
+    formatRow(headers),
+    widths.map((width) => "-".repeat(width)).join("-|-"),
+    ...rows.map(formatRow)
+  ].join("\n");
+}
+
+function petDetailRows(relayState) {
+  const profiles = relayState?.profiles || [];
+  const usersById = new Map((relayState?.users || []).map((user) => [user.user_id, user]));
+  return profiles
+    .map((profile) => {
+      const owner = usersById.get(profile.owner_user_id);
+      return [
+        profile.name || "-",
+        owner?.display_name || profile.owner_user_id || "-",
+        profile.pet_id || "-",
+        Object.keys(profile.animation_states || {}).length,
+        (profile.interaction_capabilities || []).length,
+        profile.updated_at ? profile.updated_at.slice(0, 19).replace("T", " ") : "-"
+      ];
+    })
+    .sort((a, b) => a[0].localeCompare(b[0], "zh-Hans-CN"));
+}
+
+function dailyTaskRows(events, today) {
+  const tasks = [
+    { key: "profile_registered", label: "注册宠物" },
+    { key: "invite_created", label: "创建邀请" },
+    { key: "friend_added", label: "好友绑定" },
+    { key: "visit_requested", label: "发起串门请求" },
+    { key: "visit_started", label: "开始串门" },
+    { key: "visit_event", label: "发生互动" }
+  ];
+  const rows = [];
+  for (const task of tasks) {
+    const matched = events.filter((event) => event.name === task.key && dayKey(new Date(event.at)) === today);
+    const users = new Set();
+    const pets = new Set();
+    for (const event of matched) {
+      for (const user of userHashes(event)) users.add(user);
+      if (event.pet_hash) pets.add(event.pet_hash);
+    }
+    rows.push([task.label, matched.length, users.size, pets.size]);
+  }
+  return rows;
+}
+
+function report(current, previous, relayState, events) {
+  const petRows = petDetailRows(relayState);
+  const taskRows = dailyTaskRows(events, current.today);
   const lines = [
     `Pet Y 使用监控（${current.today}，北京时间）`,
     "",
@@ -167,6 +227,14 @@ function report(current, previous) {
     `昨日新增今日回访：${current.retainedFromYesterday}/${current.newYesterday}`,
     `近 7 天活跃用户：${current.active7d}`,
     "",
+    "宠物明细：",
+    petRows.length
+      ? formatTable(["宠物名", "主人", "pet_id", "动画数", "互动能力", "最近更新时间"], petRows)
+      : "暂无",
+    "",
+    "今日任务明细：",
+    formatTable(["任务", "次数", "涉及用户", "涉及宠物"], taskRows),
+    "",
     `24 小时主要事件：${topEntries(current.counters24h)}`,
     `24 小时互动类型：${topEntries(current.eventTypes24h)}`,
     `最后事件时间：${current.persisted.last_event_at || "暂无"}`
@@ -174,8 +242,8 @@ function report(current, previous) {
   return lines.join("\n");
 }
 
-const { stats, events } = remoteRead();
+const { stats, events, relayState } = remoteRead();
 const current = analyze(stats, events);
 const previous = previousSnapshot();
 appendSnapshot(current);
-console.log(report(current, previous));
+console.log(report(current, previous, relayState, events));
