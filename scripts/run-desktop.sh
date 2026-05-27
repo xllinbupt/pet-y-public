@@ -47,13 +47,19 @@ fi
 
 runtime="${PET_Y_RUNTIME:-}"
 if [[ -z "$runtime" ]]; then
-  if [[ -x "$app_support/Runtime/PetYDesktop" ]]; then
-    runtime="$app_support/Runtime/PetYDesktop"
-  elif [[ -x "bin/PetYDesktop" ]]; then
-    runtime="bin/PetYDesktop"
-  elif [[ -x ".build/PetYDesktop" ]]; then
-    runtime=".build/PetYDesktop"
-  fi
+  candidates=(
+    "$app_support/Runtime/PetY.app/Contents/MacOS/PetYDesktop"
+    "dist/PetY.app/Contents/MacOS/PetYDesktop"
+    "$app_support/Runtime/PetYDesktop"
+    "bin/PetYDesktop"
+    ".build/PetYDesktop"
+  )
+  for candidate in "${candidates[@]}"; do
+    if [[ -x "$candidate" ]]; then
+      runtime="$candidate"
+      break
+    fi
+  done
 fi
 
 if [[ -z "$runtime" || ! -x "$runtime" ]]; then

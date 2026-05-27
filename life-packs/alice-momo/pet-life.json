@@ -72,6 +72,17 @@
       "loop": true,
       "default_facing": "none"
     },
+    "sit": {
+      "description": "坐着休息，体型保持稳定，有轻微眨眼。",
+      "asset": "assets/sit.png",
+      "format": "sprite_sheet_png",
+      "frame_width": 64,
+      "frame_height": 64,
+      "frames": 6,
+      "fps": 2,
+      "loop": true,
+      "default_facing": "none"
+    },
     "carry_ball": {
       "description": "叼着皮球走过来。",
       "asset": "assets/carry_ball.png",
@@ -90,6 +101,7 @@
       "idle": "同一只浅黄色长耳朵 Momo 的 4 帧横向 sprite sheet，站着发呆，轻微呼吸感，透明背景。",
       "run": "同一只浅黄色长耳朵 Momo 的 6 帧横向 sprite sheet，小跑动作，透明背景。",
       "sleep": "同一只浅黄色长耳朵 Momo 的 3 帧横向 sprite sheet，趴着睡觉，轻微呼吸感，透明背景。",
+      "sit": "同一只浅黄色长耳朵 Momo 的 6 帧横向 sprite sheet，坐着休息，保持同一体型和基线，透明背景。",
       "carry_ball": "同一只浅黄色长耳朵 Momo 的 6 帧横向 sprite sheet，叼着皮球走来，透明背景。"
     }
   },

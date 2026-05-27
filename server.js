@@ -321,6 +321,42 @@ function friendSummaryFor(userId, friendId) {
   return friendSummaries(userId).find((friend) => friend.user_id === friendId) || null;
 }
 
+function isExpiredAt(value) {
+  return Boolean(value && Date.now() > new Date(value).getTime());
+}
+
+function isDeliverableMailboxEvent(event) {
+  if (event.type === "visit_requested") {
+    const visitId = event.payload?.visit?.visit_id;
+    const visit = visitId ? visits.get(visitId) : null;
+    if (!visit || visit.status !== "pending") return false;
+
+    if (isExpiredAt(visit.request_expires_at)) {
+      visit.status = "cancelled";
+      visit.ended_at = new Date().toISOString();
+      emitTo(visit.owner_user_id, "visit_status", visit);
+      emitTo(visit.host_user_id, "visit_status", visit);
+      return false;
+    }
+
+    return true;
+  }
+
+  if (event.type !== "visit_invitation_requested") return true;
+
+  const requestId = event.payload?.invitation?.request_id;
+  const invitation = requestId ? visitInvitations.get(requestId) : null;
+  if (!invitation || invitation.status !== "pending") return false;
+
+  if (isExpiredAt(invitation.expires_at)) {
+    invitation.status = "expired";
+    invitation.ended_at = new Date().toISOString();
+    return false;
+  }
+
+  return true;
+}
+
 function emitTo(userId, type, payload) {
   const snapshot = JSON.parse(JSON.stringify(payload));
   const event = {
@@ -456,6 +492,21 @@ function createMemoryReceipt(visit, reason = "departed") {
   const playedTogether = visit.events.find((event) => event.type === "pet_to_pet.walk_together");
   const autonomousRoam = visit.events.find((event) => event.type === "visitor_autonomous_roam");
   const clicked = visit.events.filter((event) => event.type === "clicked").length;
+  const hostChats = visit.events.filter((event) => event.type === "host_chat" && event.data?.text);
+  const visitorChats = visit.events.filter((event) => event.type === "visitor_chat" && event.data?.text);
+  const memoryHints = visit.events
+    .filter((event) => event.type === "visitor_memory_hint" && event.data?.text)
+    .map((event) => cleanMessageText(event.data.text))
+    .filter(Boolean);
+  const chatExcerpts = visit.events
+    .filter((event) => event.type === "host_chat" || event.type === "visitor_chat")
+    .map((event) => ({
+      role: event.type === "visitor_chat" ? "pet" : "host",
+      text: cleanMessageText(event.data?.text || ""),
+      created_at: event.created_at
+    }))
+    .filter((entry) => entry.text)
+    .slice(-12);
   const parts = [`${profile?.name || "宠物"} 去了 ${host?.display_name || visit.host_user_id} 的桌面`];
 
   if (clicked > 0) parts.push(`被轻轻点了 ${clicked} 次`);
@@ -469,6 +520,7 @@ function createMemoryReceipt(visit, reason = "departed") {
     parts.push(peerName ? `和 ${peerName} 一起跑去玩了一会儿` : "和那边的宠物一起跑去玩了一会儿");
   }
   if (autonomousRoam) parts.push("自己在那边桌面上逛了逛");
+  if (visitorChats.length > 0) parts.push(`和 ${host?.display_name || "朋友"} 聊了 ${visitorChats.length} 句`);
 
   if (reason === "host_runtime_offline") parts.push("因为那边突然离线就回家了");
 
@@ -491,6 +543,9 @@ function createMemoryReceipt(visit, reason = "departed") {
   if (!fed && messages.length === 0 && !playedTogether && !satTogether && !greeted && autonomousRoam) {
     petVoice = `我在 ${host?.display_name || "朋友"} 那边自己逛了逛，找到了一个新角落。`;
   }
+  if (visitorChats.length > 0 && !fed && messages.length === 0) {
+    petVoice = `我和 ${host?.display_name || "朋友"} 聊了一会儿，回家了。`;
+  }
 
   if (reason === "host_runtime_offline") {
     petVoice = `我刚刚在 ${host?.display_name || "朋友"} 那里玩，但那边突然安静下来了，我就先回家了。`;
@@ -507,6 +562,8 @@ function createMemoryReceipt(visit, reason = "departed") {
     life_log_entry: lifeLogEntry,
     pet_voice: petVoice,
     messages: messageSummaries,
+    chat_excerpts: chatExcerpts,
+    memory_hints: memoryHints,
     relationship_traces: [
       {
         target_user_id: visit.host_user_id,
@@ -561,12 +618,14 @@ function reconcileActiveVisits() {
         visit.status = "failed";
         visit.ended_at = new Date().toISOString();
         emitTo(visit.owner_user_id, "visit_status", visit);
+        emitTo(visit.host_user_id, "visit_status", visit);
         continue;
       }
       if (Date.now() > new Date(visit.request_expires_at).getTime()) {
         visit.status = "cancelled";
         visit.ended_at = new Date().toISOString();
         emitTo(visit.owner_user_id, "visit_status", visit);
+        emitTo(visit.host_user_id, "visit_status", visit);
       }
       continue;
     }
@@ -623,7 +682,7 @@ async function handleApi(req, res, url) {
     countMetric("events_poll");
     const mailbox = eventMailboxes.get(userId) || [];
     return sendJson(res, 200, {
-      events: mailbox.filter((event) => event.id > after),
+      events: mailbox.filter((event) => event.id > after && isDeliverableMailboxEvent(event)),
       friends: friendSummaries(userId)
     });
   }
@@ -728,6 +787,11 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     if (body.user_id !== invitation.owner_user_id) return sendJson(res, 403, { error: "Only the pet owner can answer the invitation" });
     if (invitation.status !== "pending") return sendJson(res, 409, { error: "Visit invitation is no longer pending", invitation });
+    if (isExpiredAt(invitation.expires_at)) {
+      invitation.status = "expired";
+      invitation.ended_at = new Date().toISOString();
+      return sendJson(res, 409, { error: "Visit invitation expired", invitation });
+    }
     const owner = users.get(invitation.owner_user_id);
     const requester = users.get(invitation.requester_user_id);
     const profile = profiles.get(invitation.pet_id);
@@ -827,6 +891,13 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     if (body.user_id !== visit.host_user_id) return sendJson(res, 403, { error: "Only the host can answer the door" });
     if (visit.status !== "pending") return sendJson(res, 409, { error: "Visit request is no longer pending", visit });
+    if (isExpiredAt(visit.request_expires_at)) {
+      visit.status = "cancelled";
+      visit.ended_at = new Date().toISOString();
+      emitTo(visit.owner_user_id, "visit_status", visit);
+      emitTo(visit.host_user_id, "visit_status", visit);
+      return sendJson(res, 409, { error: "Visit request expired", visit });
+    }
 
     if (body.action === "decline") {
       visit.status = "declined";
@@ -932,7 +1003,6 @@ function serveStatic(req, res, url) {
 
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === "/") pathname = "/index.html";
-  if (pathname === "/alice" || pathname === "/bob") pathname = "/runtime.html";
 
   const filePath = path.normalize(path.join(publicDir, pathname));
   if (!filePath.startsWith(publicDir)) {
@@ -995,6 +1065,4 @@ setInterval(reconcileActiveVisits, 2_000);
 
 server.listen(port, host, () => {
   console.log(`Pet Y MVP running at http://${host}:${port}`);
-  console.log(`Alice runtime: http://${host}:${port}/alice?user=alice`);
-  console.log(`Bob runtime:   http://${host}:${port}/bob?user=bob`);
 });

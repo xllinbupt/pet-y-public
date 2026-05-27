@@ -1,7 +1,93 @@
 import AppKit
 import Foundation
+import Security
 
-let PetYRuntimeVersion = "v0.1.34"
+let PetYRuntimeVersion = "v0.1.35"
+
+
+struct PetYChatConfig: Codable {
+    var enabled: Bool = false
+    var provider: String = "openai_compatible"
+    var base_url: String = "https://api.openai.com/v1"
+    var model: String = "gpt-4.1-mini"
+    var temperature: Double = 0.8
+    var api_key_ref: String = PetYKeychain.apiKeyRef
+}
+
+struct PetYAppConfig: Codable {
+    var chat: PetYChatConfig = PetYChatConfig()
+
+    static var directoryURL: URL {
+        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/PetY")
+    }
+
+    static var fileURL: URL {
+        directoryURL.appendingPathComponent("config.json")
+    }
+
+    static func load() -> PetYAppConfig {
+        guard let data = try? Data(contentsOf: fileURL),
+              let config = try? JSONDecoder().decode(PetYAppConfig.self, from: data) else {
+            return PetYAppConfig()
+        }
+        return config
+    }
+
+    func save() throws {
+        try FileManager.default.createDirectory(at: Self.directoryURL, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(self).write(to: Self.fileURL, options: .atomic)
+    }
+}
+
+enum PetYKeychain {
+    static let service = "PetY"
+    static let apiKeyAccount = "chat.openai_compatible.api_key"
+    static let apiKeyRef = "keychain:PetY/chat.openai_compatible.api_key"
+
+    static func readAPIKey() -> String {
+        read(service: service, account: apiKeyAccount) ?? ""
+    }
+
+    static func saveAPIKey(_ value: String) throws {
+        try save(value, service: service, account: apiKeyAccount)
+    }
+
+    private static func read(service: String, account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let value = String(data: data, encoding: .utf8) else { return nil }
+        return value
+    }
+
+    private static func save(_ value: String, service: String, account: String) throws {
+        let data = Data(value.utf8)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let attributes: [String: Any] = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecSuccess { return }
+        if status != errSecItemNotFound { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+
+        var addQuery = query
+        addQuery[kSecValueData as String] = data
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess { throw NSError(domain: NSOSStatusErrorDomain, code: Int(addStatus)) }
+    }
+}
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -90,6 +176,7 @@ struct VisitInvitation: Codable {
     let pet_id: String
     let status: String
     let visit_id: String?
+    let expires_at: String?
 }
 
 struct VisitInvitationPayload: Codable {
@@ -110,6 +197,8 @@ struct VisitSession: Codable {
     let host_user_id: String
     let profile_version: Int
     let status: String
+    let requested_at: String?
+    let request_expires_at: String?
 }
 
 struct VisitStartedPayload: Codable {
@@ -130,6 +219,8 @@ final class VisitorProjection {
     let window: PetWindow
     var roamTimer: Timer?
     var animationTimer: Timer?
+    var chatMemoryCandidates: [String] = []
+    var chatTurns: Int = 0
 
     init(visit: VisitSession, profile: PetProfile, window: PetWindow) {
         self.visit = visit
@@ -145,6 +236,14 @@ struct MemoryReceipt: Codable {
     let life_log_entry: String
     let pet_voice: String
     let messages: [VisitMessage]?
+    let chat_excerpts: [ChatExcerpt]?
+    let memory_hints: [String]?
+}
+
+struct ChatExcerpt: Codable {
+    let role: String
+    let text: String
+    let created_at: String?
 }
 
 struct VisitMessage: Codable {
@@ -184,9 +283,22 @@ struct AnimationState: Codable {
     let default_facing: String?
 }
 
+struct LifePackVoice: Codable {
+    let tone: String?
+    let first_person: Bool?
+    let sample_lines: [String: String]?
+}
+
+struct LifePackMemoryRules: Codable {
+    let summary_style: String?
+    let remember_events: [String]?
+}
+
 struct PetLifePack: Codable {
     let schema_version: String
     let profile: PetProfile
+    let voice: LifePackVoice?
+    let memory_rules: LifePackMemoryRules?
     let animation_states: [String: AnimationState]?
 }
 
@@ -326,7 +438,7 @@ enum PetLifePackLoader {
            let pack = try? JSONDecoder().decode(PetLifePack.self, from: data) {
             return LoadedLifePack(pack: pack, directoryURL: packURL.deletingLastPathComponent())
         }
-        let fallback = PetLifePack(schema_version: "0.1", profile: fallbackProfile(for: userId), animation_states: nil)
+        let fallback = PetLifePack(schema_version: "0.1", profile: fallbackProfile(for: userId), voice: nil, memory_rules: nil, animation_states: nil)
         return LoadedLifePack(pack: fallback, directoryURL: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
     }
 
@@ -688,15 +800,27 @@ final class BallView: NSView {
 
 struct PetAction {
     let title: String
+    let isEnabled: Bool
     let handler: () -> Void
+
+    init(title: String, isEnabled: Bool = true, handler: @escaping () -> Void) {
+        self.title = title
+        self.isEnabled = isEnabled
+        self.handler = handler
+    }
+}
+
+enum InteractionMenuLayout {
+    case horizontal
+    case vertical
 }
 
 final class InteractionMenuWindow: NSWindow {
-    init(origin: CGPoint, actions: [PetAction]) {
-        let buttonWidths = InteractionMenuView.buttonWidths(for: actions)
-        let width = InteractionMenuView.menuWidth(for: buttonWidths)
+    init(origin: CGPoint, actions: [PetAction], layout: InteractionMenuLayout = .horizontal) {
+        let buttonWidths = InteractionMenuView.buttonWidths(for: actions, layout: layout)
+        let size = InteractionMenuView.menuSize(for: buttonWidths, layout: layout)
         super.init(
-            contentRect: NSRect(x: origin.x, y: origin.y, width: width, height: 48),
+            contentRect: NSRect(x: origin.x, y: origin.y, width: size.width, height: size.height),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -707,7 +831,12 @@ final class InteractionMenuWindow: NSWindow {
         hasShadow = true
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        contentView = InteractionMenuView(frame: NSRect(x: 0, y: 0, width: width, height: 48), actions: actions, buttonWidths: buttonWidths)
+        contentView = InteractionMenuView(
+            frame: NSRect(x: 0, y: 0, width: size.width, height: size.height),
+            actions: actions,
+            buttonWidths: buttonWidths,
+            layout: layout
+        )
         makeKeyAndOrderFront(nil)
     }
 }
@@ -715,48 +844,140 @@ final class InteractionMenuWindow: NSWindow {
 final class InteractionMenuView: NSView {
     let actions: [PetAction]
     let buttonWidths: [CGFloat]
+    let layout: InteractionMenuLayout
 
-    static func buttonWidths(for actions: [PetAction]) -> [CGFloat] {
+    static func buttonWidths(for actions: [PetAction], layout: InteractionMenuLayout = .horizontal) -> [CGFloat] {
         actions.map { action in
-            max(50, CGFloat(action.title.count) * 13 + 26)
+            let base: CGFloat = layout == .vertical ? 12 : 13
+            let padding: CGFloat = layout == .vertical ? 30 : 26
+            let minWidth: CGFloat = layout == .vertical ? 78 : 50
+            return max(minWidth, CGFloat(action.title.count) * base + padding)
         }
     }
 
-    static func menuWidth(for buttonWidths: [CGFloat]) -> CGFloat {
-        buttonWidths.reduce(16, +) + CGFloat(max(0, buttonWidths.count - 1) * 8)
+    static func menuSize(for buttonWidths: [CGFloat], layout: InteractionMenuLayout = .horizontal, maxWidth: CGFloat? = nil) -> CGSize {
+        switch layout {
+        case .horizontal:
+            let resolvedMaxWidth = maxWidth ?? horizontalMaxWidth()
+            let rows = horizontalRows(for: buttonWidths, maxWidth: resolvedMaxWidth)
+            let width = min(resolvedMaxWidth, rows.map { rowWidth(for: $0) }.max() ?? 16)
+            let height = CGFloat(rows.count) * 30 + CGFloat(max(0, rows.count - 1) * 8) + 16
+            return CGSize(width: width, height: height)
+        case .vertical:
+            let width = min(max(buttonWidths.max() ?? 120, 120), 240) + 16
+            let height = CGFloat(buttonWidths.count) * 34 + CGFloat(max(0, buttonWidths.count - 1) * 8) + 16
+            return CGSize(width: width, height: height)
+        }
     }
 
-    init(frame frameRect: NSRect, actions: [PetAction], buttonWidths: [CGFloat]) {
+    private static func horizontalMaxWidth() -> CGFloat {
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        return min(620, max(220, screen.width - 32))
+    }
+
+    private static func horizontalRows(for buttonWidths: [CGFloat], maxWidth: CGFloat) -> [[CGFloat]] {
+        guard !buttonWidths.isEmpty else { return [[]] }
+        var rows: [[CGFloat]] = [[]]
+        var currentWidth: CGFloat = 16
+
+        for width in buttonWidths {
+            let nextWidth = rows[rows.count - 1].isEmpty ? currentWidth + width : currentWidth + 8 + width
+            if nextWidth > maxWidth, !rows[rows.count - 1].isEmpty {
+                rows.append([width])
+                currentWidth = 16 + width
+            } else {
+                rows[rows.count - 1].append(width)
+                currentWidth = nextWidth
+            }
+        }
+
+        return rows
+    }
+
+    private static func rowWidth(for row: [CGFloat]) -> CGFloat {
+        row.reduce(16, +) + CGFloat(max(0, row.count - 1) * 8)
+    }
+
+    init(frame frameRect: NSRect, actions: [PetAction], buttonWidths: [CGFloat], layout: InteractionMenuLayout = .horizontal) {
         self.actions = actions
         self.buttonWidths = buttonWidths
+        self.layout = layout
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
-        var x: CGFloat = 8
-        for (index, action) in actions.enumerated() {
-            let button = NSButton(title: action.title, target: self, action: #selector(actionTapped(_:)))
-            button.tag = index
-            button.isBordered = false
-            button.wantsLayer = true
-            button.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.96).cgColor
-            button.layer?.cornerRadius = 8
-            button.layer?.borderWidth = 1
-            button.layer?.borderColor = NSColor.black.withAlphaComponent(0.14).cgColor
-            button.font = .systemFont(ofSize: 12, weight: .semibold)
-            button.contentTintColor = NSColor.black
-            button.attributedTitle = NSAttributedString(
-                string: action.title,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                    .foregroundColor: NSColor.black
-                ]
-            )
-            let width = buttonWidths[index]
-            button.frame = NSRect(x: x, y: 8, width: width, height: 30)
-            addSubview(button)
-            x += width + 8
+        switch layout {
+        case .horizontal:
+            var x: CGFloat = 8
+            var y = frameRect.height - 8 - 30
+            for (index, action) in actions.enumerated() {
+                let width = buttonWidths[index]
+                if x > 8, x + width > frameRect.width - 8 {
+                    x = 8
+                    y -= 38
+                }
+                let button = NSButton(title: action.title, target: self, action: #selector(actionTapped(_:)))
+                button.tag = index
+                button.isBordered = false
+                button.wantsLayer = true
+                button.isEnabled = action.isEnabled
+                button.layer?.backgroundColor = buttonBackgroundColor(for: action).cgColor
+                button.layer?.cornerRadius = 8
+                button.layer?.borderWidth = 1
+                button.layer?.borderColor = buttonBorderColor(for: action).cgColor
+                button.font = .systemFont(ofSize: 12, weight: .semibold)
+                button.contentTintColor = buttonTextColor(for: action)
+                button.attributedTitle = NSAttributedString(
+                    string: action.title,
+                    attributes: [
+                        .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                        .foregroundColor: buttonTextColor(for: action)
+                    ]
+                )
+                button.frame = NSRect(x: x, y: y, width: width, height: 30)
+                addSubview(button)
+                x += width + 8
+            }
+        case .vertical:
+            let availableWidth = frameRect.width - 16
+            var y = frameRect.height - 8 - 30
+            for (index, action) in actions.enumerated() {
+                let button = NSButton(title: action.title, target: self, action: #selector(actionTapped(_:)))
+                button.tag = index
+                button.isBordered = false
+                button.wantsLayer = true
+                button.isEnabled = action.isEnabled
+                button.layer?.backgroundColor = buttonBackgroundColor(for: action).cgColor
+                button.layer?.cornerRadius = 8
+                button.layer?.borderWidth = 1
+                button.layer?.borderColor = buttonBorderColor(for: action).cgColor
+                button.font = .systemFont(ofSize: 12, weight: .semibold)
+                button.contentTintColor = buttonTextColor(for: action)
+                button.attributedTitle = NSAttributedString(
+                    string: action.title,
+                    attributes: [
+                        .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                        .foregroundColor: buttonTextColor(for: action)
+                    ]
+                )
+                let width = min(buttonWidths[index], availableWidth)
+                button.frame = NSRect(x: 8, y: y, width: width, height: 30)
+                addSubview(button)
+                y -= 38
+            }
         }
+    }
+
+    private func buttonBackgroundColor(for action: PetAction) -> NSColor {
+        action.isEnabled ? NSColor.white.withAlphaComponent(0.96) : NSColor.white.withAlphaComponent(0.48)
+    }
+
+    private func buttonBorderColor(for action: PetAction) -> NSColor {
+        action.isEnabled ? NSColor.black.withAlphaComponent(0.14) : NSColor.black.withAlphaComponent(0.07)
+    }
+
+    private func buttonTextColor(for action: PetAction) -> NSColor {
+        action.isEnabled ? NSColor.black : NSColor.black.withAlphaComponent(0.36)
     }
 
     required init?(coder: NSCoder) {
@@ -765,6 +986,7 @@ final class InteractionMenuView: NSView {
 
     @objc private func actionTapped(_ sender: NSButton) {
         guard actions.indices.contains(sender.tag) else { return }
+        guard actions[sender.tag].isEnabled else { return }
         actions[sender.tag].handler()
     }
 
@@ -871,6 +1093,7 @@ final class PetView: NSView {
     let onDragEnd: (_ from: CGPoint, _ to: CGPoint, _ durationMs: Int) -> Void
     var activeAnimationName = "idle"
     var animationImage: NSImage?
+    var animationBitmap: NSBitmapImageRep?
     var currentFrame = 0
     var renderScale: CGFloat = 1.0
     var facingLeft = false
@@ -919,6 +1142,99 @@ final class PetView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Let clicks pass through the transparent parts of the pet window.
+        guard isInteractivePoint(point) else { return nil }
+        return super.hitTest(point)
+    }
+
+    func isInteractiveWindowPoint(_ point: NSPoint) -> Bool {
+        isInteractivePoint(convert(point, from: nil))
+    }
+
+    var isDraggingPet: Bool {
+        dragStartFrame != nil
+    }
+
+    private func isInteractivePoint(_ point: NSPoint) -> Bool {
+        if bubbleHitRect()?.contains(point) == true { return true }
+        return isOpaquePetPoint(point)
+    }
+
+    private func petHitRect() -> NSRect {
+        if animationImage != nil {
+            return spriteTargetRect().insetBy(dx: -10, dy: -10)
+        }
+
+        return NSRect(x: (bounds.width - 96) / 2, y: 20, width: 96, height: 100)
+    }
+
+    private func spriteTargetRect() -> NSRect {
+        let spriteSize = 64 * renderScale
+        return NSRect(
+            x: (bounds.width - spriteSize) / 2,
+            y: 28 + (64 - spriteSize) / 2,
+            width: spriteSize,
+            height: spriteSize
+        )
+    }
+
+    private func isOpaquePetPoint(_ point: NSPoint) -> Bool {
+        guard let animationState = animationStates[activeAnimationName],
+              let animationImage,
+              let animationBitmap else {
+            return petHitRect().contains(point)
+        }
+
+        let target = spriteTargetRect()
+        guard target.contains(point) else { return false }
+
+        let frameWidth = CGFloat(animationState.frame_width)
+        let frameHeight = CGFloat(animationState.frame_height)
+        guard frameWidth > 0, frameHeight > 0, target.width > 0, target.height > 0 else { return false }
+
+        var normalizedX = (point.x - target.minX) / target.width
+        let normalizedY = (point.y - target.minY) / target.height
+        if shouldMirrorSprite(animationState) {
+            normalizedX = 1 - normalizedX
+        }
+
+        let clampedFrame = max(0, min(currentFrame, animationState.frames - 1))
+        let sourceX = CGFloat(clampedFrame) * frameWidth + normalizedX * frameWidth
+        let sourceY = normalizedY * frameHeight
+
+        let imageScaleX = CGFloat(animationBitmap.pixelsWide) / max(animationImage.size.width, 1)
+        let imageScaleY = CGFloat(animationBitmap.pixelsHigh) / max(animationImage.size.height, 1)
+        let pixelX = max(0, min(animationBitmap.pixelsWide - 1, Int(sourceX * imageScaleX)))
+        let pixelY = max(0, min(animationBitmap.pixelsHigh - 1, Int(sourceY * imageScaleY)))
+
+        return (animationBitmap.colorAt(x: pixelX, y: pixelY)?.alphaComponent ?? 0) > 0.2
+    }
+
+    private func bubbleHitRect() -> NSRect? {
+        guard let bubble else { return nil }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byWordWrapping
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NSColor.black,
+            .paragraphStyle: paragraph
+        ]
+        let bubbleWidth = min(bounds.width - 12, 208)
+        let limit = NSSize(width: bubbleWidth - 16, height: 76)
+        let rect = NSString(string: bubble).boundingRect(
+            with: limit,
+            options: [.usesLineFragmentOrigin],
+            attributes: attributes
+        )
+        let bubbleHeight = min(88, Swift.max(32, rect.height + 14))
+        let bubbleTopPadding: CGFloat = 6
+        let bubbleBottomNearPet: CGFloat = 118
+        let bubbleY = min(bounds.height - bubbleHeight - bubbleTopPadding, bubbleBottomNearPet)
+        return NSRect(x: (bounds.width - bubbleWidth) / 2, y: bubbleY, width: bubbleWidth, height: bubbleHeight)
+    }
+
     override func mouseDown(with event: NSEvent) {
         if event.type == .rightMouseDown || event.modifierFlags.contains(.control) {
             onAlternateClick?()
@@ -958,11 +1274,11 @@ final class PetView: NSView {
         dragStartFrame = nil
     }
 
-    func say(_ text: String) {
+    func say(_ text: String, minimum: Double = 3.2, cap: Double = 8.0, perCharacter: Double = 0.08) {
         bubble = text
         needsDisplay = true
         bubbleTimer?.invalidate()
-        let duration = min(8.0, max(3.2, Double(text.count) * 0.08))
+        let duration = min(cap, max(minimum, Double(text.count) * perCharacter))
         bubbleTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
             self?.bubble = nil
             self?.needsDisplay = true
@@ -1025,6 +1341,7 @@ final class PetView: NSView {
         frameTimer = nil
         currentFrame = 0
         animationImage = nil
+        animationBitmap = nil
 
         guard let animationState = animationStates[activeAnimationName],
               animationState.format == "sprite_sheet_png",
@@ -1039,6 +1356,9 @@ final class PetView: NSView {
               animationState.fps > 0 else { return }
 
         animationImage = image
+        if let tiffData = image.tiffRepresentation {
+            animationBitmap = NSBitmapImageRep(data: tiffData)
+        }
         frameTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / Double(animationState.fps), repeats: true) { [weak self] _ in
             guard let self, let animationState = self.animationStates[self.activeAnimationName] else { return }
             if animationState.loop {
@@ -1097,13 +1417,7 @@ final class PetView: NSView {
             width: frameWidth,
             height: frameHeight
         )
-        let spriteSize = 64 * renderScale
-        let target = NSRect(
-            x: (bounds.width - spriteSize) / 2,
-            y: 28 + (64 - spriteSize) / 2,
-            width: spriteSize,
-            height: spriteSize
-        )
+        let target = spriteTargetRect()
         if shouldMirrorSprite(animationState) {
             NSGraphicsContext.saveGraphicsState()
             let transform = NSAffineTransform()
@@ -1164,7 +1478,10 @@ final class PetView: NSView {
             attributes: attributes
         )
         let bubbleHeight = min(88, Swift.max(32, rect.height + 14))
-        let bubbleRect = NSRect(x: (bounds.width - bubbleWidth) / 2, y: bounds.height - bubbleHeight - 6, width: bubbleWidth, height: bubbleHeight)
+        let bubbleTopPadding: CGFloat = 6
+        let bubbleBottomNearPet: CGFloat = 118
+        let bubbleY = min(bounds.height - bubbleHeight - bubbleTopPadding, bubbleBottomNearPet)
+        let bubbleRect = NSRect(x: (bounds.width - bubbleWidth) / 2, y: bubbleY, width: bubbleWidth, height: bubbleHeight)
         let path = NSBezierPath(roundedRect: bubbleRect, xRadius: 8, yRadius: 8)
         NSColor.white.withAlphaComponent(0.96).setFill()
         path.fill()
@@ -1172,6 +1489,280 @@ final class PetView: NSView {
         path.lineWidth = 1
         path.stroke()
         NSString(string: text).draw(in: bubbleRect.insetBy(dx: 8, dy: 6), withAttributes: attributes)
+    }
+}
+
+
+final class AISettingsWindowController: NSWindowController {
+    private struct ProviderPreset {
+        let id: String
+        let title: String
+        let baseURL: String
+        let model: String
+    }
+
+    private let providerPresets = [
+        ProviderPreset(id: "deepseek_official", title: "DeepSeek 官方", baseURL: "https://api.deepseek.com/v1", model: "deepseek-v4-flash")
+    ]
+
+    private let enabledButton = NSButton(checkboxWithTitle: "启用宠物对话", target: nil, action: nil)
+    private let providerPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let baseURLField = PasteFriendlyTextField(frame: .zero)
+    private let modelField = PasteFriendlyTextField(frame: .zero)
+    private let apiKeyField = SingleLineSecureTextField(frame: .zero)
+    private let statusLabel = NSTextField(labelWithString: "")
+    private var config: PetYAppConfig
+    private let onSave: (PetYAppConfig) -> Void
+
+    init(config: PetYAppConfig, apiKey: String, onSave: @escaping (PetYAppConfig) -> Void) {
+        self.config = config
+        self.onSave = onSave
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 330),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "AI 对话设置"
+        window.isReleasedWhenClosed = false
+        super.init(window: window)
+        buildUI(apiKey: apiKey)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func buildUI(apiKey: String) {
+        guard let contentView = window?.contentView else { return }
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(stack)
+
+        enabledButton.state = config.chat.enabled ? .on : .off
+        stack.addArrangedSubview(enabledButton)
+
+        configureProviderPopup()
+        stack.addArrangedSubview(row(label: "Provider", view: providerPopup))
+
+        baseURLField.stringValue = config.chat.base_url
+        baseURLField.placeholderString = "https://api.openai.com/v1"
+        stack.addArrangedSubview(row(label: "Base URL", view: baseURLField))
+
+        modelField.stringValue = config.chat.model
+        modelField.placeholderString = "gpt-4.1-mini"
+        stack.addArrangedSubview(row(label: "Model", view: modelField))
+
+        apiKeyField.stringValue = apiKey
+        apiKeyField.placeholderString = "sk-..."
+        stack.addArrangedSubview(row(label: "API Key", view: apiKeyField))
+
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.lineBreakMode = .byWordWrapping
+        statusLabel.maximumNumberOfLines = 2
+        stack.addArrangedSubview(statusLabel)
+
+        let buttonRow = NSStackView()
+        buttonRow.orientation = .horizontal
+        buttonRow.spacing = 10
+        buttonRow.alignment = .centerY
+        let testButton = NSButton(title: "测试连接", target: self, action: #selector(testConnectionTapped))
+        let saveButton = NSButton(title: "保存", target: self, action: #selector(saveTapped))
+        saveButton.keyEquivalent = "\r"
+        buttonRow.addArrangedSubview(testButton)
+        buttonRow.addArrangedSubview(saveButton)
+        stack.addArrangedSubview(buttonRow)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 22),
+            baseURLField.widthAnchor.constraint(equalToConstant: 290),
+            modelField.widthAnchor.constraint(equalToConstant: 290),
+            apiKeyField.widthAnchor.constraint(equalToConstant: 290),
+            statusLabel.widthAnchor.constraint(equalToConstant: 430),
+            providerPopup.widthAnchor.constraint(equalToConstant: 290)
+        ])
+    }
+
+    private func configureProviderPopup() {
+        providerPopup.removeAllItems()
+        for preset in providerPresets {
+            providerPopup.addItem(withTitle: preset.title)
+            providerPopup.lastItem?.representedObject = preset.id
+        }
+        let selectedId = presetId(for: config.chat)
+        if let item = providerPopup.itemArray.first(where: { $0.representedObject as? String == selectedId }) {
+            providerPopup.select(item)
+        }
+        providerPopup.target = self
+        providerPopup.action = #selector(providerChanged)
+    }
+
+    private func presetId(for chatConfig: PetYChatConfig) -> String {
+        if providerPresets.contains(where: { $0.id == chatConfig.provider && $0.id != "openai_compatible" }) {
+            return chatConfig.provider
+        }
+        if let matching = providerPresets.first(where: { !$0.baseURL.isEmpty && $0.baseURL == chatConfig.base_url }) {
+            return matching.id
+        }
+        return "openai_compatible"
+    }
+
+    @objc private func providerChanged() {
+        guard let id = providerPopup.selectedItem?.representedObject as? String,
+              let preset = providerPresets.first(where: { $0.id == id }),
+              id != "openai_compatible" else { return }
+        baseURLField.stringValue = preset.baseURL
+        modelField.stringValue = preset.model
+    }
+
+    private func row(label: String, view: NSView) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 12
+        row.alignment = .centerY
+        let labelView = NSTextField(labelWithString: label)
+        labelView.alignment = .right
+        labelView.widthAnchor.constraint(equalToConstant: 92).isActive = true
+        row.addArrangedSubview(labelView)
+        row.addArrangedSubview(view)
+        return row
+    }
+
+    private func sanitizedAPIKey() -> String {
+        apiKeyField.stringValue
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func readFields() -> PetYChatConfig {
+        PetYChatConfig(
+            enabled: enabledButton.state == .on,
+            provider: providerPopup.selectedItem?.representedObject as? String ?? "openai_compatible",
+            base_url: normalizedBaseURL(),
+            model: modelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+            temperature: 1.0,
+            api_key_ref: PetYKeychain.apiKeyRef
+        )
+    }
+
+    private func normalizedBaseURL() -> String {
+        baseURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    @objc private func saveTapped() {
+        do {
+            config.chat = readFields()
+            let sanitizedKey = sanitizedAPIKey()
+            apiKeyField.stringValue = sanitizedKey
+            try PetYKeychain.saveAPIKey(sanitizedKey)
+            try config.save()
+            onSave(config)
+            statusLabel.textColor = .systemGreen
+            statusLabel.stringValue = "已保存，API Key 存在钥匙串里。"
+        } catch {
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "保存失败：\(error.localizedDescription)"
+        }
+    }
+
+    @objc private func testConnectionTapped() {
+        let chatConfig = readFields()
+        let sanitizedKey = sanitizedAPIKey()
+        apiKeyField.stringValue = sanitizedKey
+        guard !sanitizedKey.isEmpty else {
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "先填 API Key。"
+            return
+        }
+        guard let url = URL(string: chatConfig.base_url + "/chat/completions") else {
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "Base URL 不对。"
+            return
+        }
+
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.stringValue = "测试中..."
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(sanitizedKey)", forHTTPHeaderField: "Authorization")
+        let body: [String: Any] = [
+            "model": chatConfig.model,
+            "messages": [["role": "user", "content": "ping"]],
+            "temperature": chatConfig.temperature,
+            "max_tokens": 8
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let error {
+                    self.statusLabel.textColor = .systemRed
+                    self.statusLabel.stringValue = "测试失败：\(error.localizedDescription)"
+                    return
+                }
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard (200..<300).contains(statusCode) else {
+                    let detail = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                    self.statusLabel.textColor = .systemRed
+                    self.statusLabel.stringValue = "测试失败：HTTP \(statusCode) \(detail.prefix(120))"
+                    return
+                }
+                self.statusLabel.textColor = .systemGreen
+                self.statusLabel.stringValue = "连接成功。"
+            }
+        }.resume()
+    }
+}
+
+
+struct PetChatLogEntry: Codable {
+    let role: String
+    let text: String
+    let created_at: String
+}
+
+final class PetChatStore {
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+    private let directoryURL: URL
+
+    init(appSupportURL: URL = PetYAppConfig.directoryURL) {
+        self.directoryURL = appSupportURL.appendingPathComponent("Chats")
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    }
+
+    func recentMessages(for petId: String, limit: Int = 10) -> [PetChatLogEntry] {
+        guard let data = try? Data(contentsOf: fileURL(for: petId)),
+              let entries = try? decoder.decode([PetChatLogEntry].self, from: data) else { return [] }
+        return Array(entries.suffix(limit))
+    }
+
+    func append(role: String, text: String, petId: String) {
+        var entries = recentMessages(for: petId, limit: 80)
+        entries.append(PetChatLogEntry(role: role, text: text, created_at: ISO8601DateFormatter().string(from: Date())))
+        if entries.count > 80 {
+            entries.removeFirst(entries.count - 80)
+        }
+        do {
+            try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            try encoder.encode(entries).write(to: fileURL(for: petId), options: .atomic)
+        } catch {
+            // Chat history is helpful context, but it should never block the pet UI.
+        }
+    }
+
+    private func fileURL(for petId: String) -> URL {
+        let safeName = petId.replacingOccurrences(of: "/", with: "_")
+        return directoryURL.appendingPathComponent("\(safeName).json")
     }
 }
 
@@ -1185,6 +1776,7 @@ final class ControlPanel: NSObject {
     var updateVersion: String?
     var updateURL: URL?
     var recentLogs: [String] = []
+    var chatHistoryProvider: (() -> [String])?
     var onSendVisit: ((String) -> Void)?
     var onReturn: (() -> Void)?
     var onRecallPet: (() -> Void)?
@@ -1194,6 +1786,8 @@ final class ControlPanel: NSObject {
     var onDoNotDisturb: ((Int) -> Void)?
     var onCheckUpdate: (() -> Void)?
     var onOpenUpdate: (() -> Void)?
+    var onOpenAISettings: (() -> Void)?
+    var onQuit: (() -> Void)?
 
     override init() {
         super.init()
@@ -1255,6 +1849,7 @@ final class ControlPanel: NSObject {
         } else {
             menu.addItem(actionItem(title: "检查更新", action: #selector(checkUpdateTapped)))
         }
+        menu.addItem(actionItem(title: "AI 对话设置...", action: #selector(openAISettingsTapped)))
         menu.addItem(.separator())
 
         let friendsItem = NSMenuItem(title: "好友", action: nil, keyEquivalent: "")
@@ -1308,6 +1903,18 @@ final class ControlPanel: NSObject {
         menu.addItem(dndItem)
         menu.addItem(.separator())
 
+        if let chatLines = chatHistoryProvider?(), !chatLines.isEmpty {
+            let chatItem = NSMenuItem(title: "最近聊天", action: nil, keyEquivalent: "")
+            let chatMenu = NSMenu()
+            for line in chatLines {
+                let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+                item.isEnabled = false
+                chatMenu.addItem(item)
+            }
+            chatItem.submenu = chatMenu
+            menu.addItem(chatItem)
+        }
+
         if !recentLogs.isEmpty {
             let logsItem = NSMenuItem(title: "最近日志", action: nil, keyEquivalent: "")
             let logsMenu = NSMenu()
@@ -1325,6 +1932,8 @@ final class ControlPanel: NSObject {
         statusItem.menu = menu
     }
 
+    func refresh() { rebuildMenu() }
+
     private func actionItem(title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
         item.target = self
@@ -1340,10 +1949,11 @@ final class ControlPanel: NSObject {
     @objc private func doNotDisturbTapped(_ sender: NSMenuItem) { onDoNotDisturb?(sender.representedObject as? Int ?? 30) }
     @objc private func checkUpdateTapped() { onCheckUpdate?() }
     @objc private func openUpdateTapped() { onOpenUpdate?() }
-    @objc private func quitTapped() { NSApp.terminate(nil) }
+    @objc private func openAISettingsTapped() { onOpenAISettings?() }
+    @objc private func quitTapped() { onQuit?() ?? NSApp.terminate(nil) }
 }
 
-final class PasteFriendlyTextField: NSTextField {
+class PasteFriendlyTextField: NSTextField {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown,
               event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
@@ -1367,6 +1977,260 @@ final class PasteFriendlyTextField: NSTextField {
     }
 }
 
+
+final class PetChatTextField: PasteFriendlyTextField {
+    var onSubmit: (() -> Void)?
+    var onCancel: (() -> Void)?
+}
+
+final class SingleLineSecureTextField: NSSecureTextField {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown,
+              event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+              let key = event.charactersIgnoringModifiers?.lowercased() else {
+            return super.performKeyEquivalent(with: event)
+        }
+        if key == "v" {
+            if let raw = NSPasteboard.general.string(forType: .string) {
+                let cleaned = raw
+                    .replacingOccurrences(of: "\r", with: "")
+                    .replacingOccurrences(of: "\n", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+                if let editor = currentEditor() {
+                    editor.insertText(cleaned)
+                } else {
+                    stringValue += cleaned
+                }
+            }
+            return true
+        }
+        if key == "a" {
+            _ = NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: self)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
+final class ChatHintView: NSView {
+    static let size = NSSize(width: 64, height: 30)
+    private let onTap: () -> Void
+
+    init(onTap: @escaping () -> Void) {
+        self.onTap = onTap
+        super.init(frame: NSRect(origin: .zero, size: Self.size))
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let bubbleRect = bounds.insetBy(dx: 1, dy: 1)
+        let path = NSBezierPath(roundedRect: bubbleRect, xRadius: bubbleRect.height / 2, yRadius: bubbleRect.height / 2)
+
+        let top = NSColor(calibratedRed: 0.99, green: 0.66, blue: 0.40, alpha: 1.0)
+        let bottom = NSColor(calibratedRed: 0.97, green: 0.48, blue: 0.30, alpha: 1.0)
+        if let gradient = NSGradient(starting: top, ending: bottom) {
+            gradient.draw(in: path, angle: -90)
+        } else {
+            top.setFill()
+            path.fill()
+        }
+        NSColor.white.withAlphaComponent(0.35).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        let text = NSString(string: "聊天")
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: NSColor.white,
+            .kern: 1.0
+        ]
+        let textSize = text.size(withAttributes: attrs)
+        let textRect = NSRect(
+            x: (bounds.width - textSize.width) / 2,
+            y: (bounds.height - textSize.height) / 2,
+            width: textSize.width,
+            height: textSize.height
+        )
+        text.draw(in: textRect, withAttributes: attrs)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onTap()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
+final class ChatHintWindow: NSWindow {
+    init(origin: CGPoint, onTap: @escaping () -> Void) {
+        let size = ChatHintView.size
+        super.init(
+            contentRect: NSRect(origin: origin, size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        isReleasedWhenClosed = false
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        level = .floating
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        ignoresMouseEvents = false
+        contentView = ChatHintView(onTap: onTap)
+        orderFrontRegardless()
+    }
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
+final class PetChatInputWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    init(origin: CGPoint, placeholder: String, onSend: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+        let size = NSSize(width: 330, height: 48)
+        super.init(
+            contentRect: NSRect(origin: origin, size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        isReleasedWhenClosed = false
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        level = .floating
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        contentView = PetChatInputView(frame: NSRect(origin: .zero, size: size), placeholder: placeholder, onSend: onSend, onCancel: onCancel)
+        makeKeyAndOrderFront(nil)
+        (contentView as? PetChatInputView)?.focusInput()
+    }
+}
+
+final class PetChatInputView: NSView, NSTextFieldDelegate {
+    private let input: PetChatTextField
+    private let sendButton: NSButton
+    private let closeButton: NSButton
+    private let onSend: (String) -> Void
+    private let onCancel: () -> Void
+
+    init(frame frameRect: NSRect, placeholder: String, onSend: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+        self.input = PetChatTextField(frame: .zero)
+        self.sendButton = NSButton(title: "说", target: nil, action: nil)
+        self.closeButton = NSButton(title: "×", target: nil, action: nil)
+        self.onSend = onSend
+        self.onCancel = onCancel
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+
+        input.placeholderString = placeholder
+        input.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        input.isBordered = false
+        input.drawsBackground = false
+        input.focusRingType = .none
+        input.translatesAutoresizingMaskIntoConstraints = false
+        input.onSubmit = { [weak self] in self?.submit() }
+        input.onCancel = { [weak self] in self?.cancel() }
+        input.delegate = self
+        addSubview(input)
+
+        sendButton.bezelStyle = .rounded
+        sendButton.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        sendButton.target = self
+        sendButton.action = #selector(sendTapped)
+        sendButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(sendButton)
+
+        closeButton.isBordered = false
+        closeButton.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        closeButton.contentTintColor = NSColor.black.withAlphaComponent(0.5)
+        closeButton.target = self
+        closeButton.action = #selector(closeTapped)
+        closeButton.toolTip = "关闭"
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(closeButton)
+
+        NSLayoutConstraint.activate([
+            input.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            input.centerYAnchor.constraint(equalTo: centerYAnchor),
+            input.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -10),
+            input.heightAnchor.constraint(equalToConstant: 26),
+            sendButton.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -4),
+            sendButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            sendButton.widthAnchor.constraint(equalToConstant: 48),
+            closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            closeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            closeButton.widthAnchor.constraint(equalToConstant: 22),
+            closeButton.heightAnchor.constraint(equalToConstant: 22)
+        ])
+    }
+
+    @objc private func closeTapped() {
+        cancel()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func focusInput() {
+        window?.makeFirstResponder(input)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill()
+        dirtyRect.fill()
+        let bubbleRect = bounds.insetBy(dx: 3, dy: 3)
+        let path = NSBezierPath(roundedRect: bubbleRect, xRadius: 18, yRadius: 18)
+        NSColor.white.withAlphaComponent(0.96).setFill()
+        path.fill()
+        NSColor.black.withAlphaComponent(0.14).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        let tail = NSBezierPath()
+        tail.move(to: NSPoint(x: 74, y: 6))
+        tail.line(to: NSPoint(x: 92, y: -1))
+        tail.line(to: NSPoint(x: 108, y: 6))
+        tail.close()
+        NSColor.white.withAlphaComponent(0.96).setFill()
+        tail.fill()
+    }
+
+    @objc private func sendTapped() {
+        submit()
+    }
+
+    private func submit() {
+        let text = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        onSend(text)
+    }
+
+    private func cancel() {
+        onCancel()
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            submit()
+            return true
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            cancel()
+            return true
+        }
+        return false
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let userId: String
     let identity: LocalIdentity
@@ -1376,6 +2240,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let animationResolver: AnimationResolver
     var localState: LocalPetState
     var localPet: PetProfile { localState.profile }
+    var appConfig = PetYAppConfig.load()
+    var aiSettingsWindowController: AISettingsWindowController?
+    var chatInputWindow: PetChatInputWindow?
+    var chatDismissLocalMonitor: Any?
+    var chatDismissGlobalMonitor: Any?
+    let chatStore = PetChatStore()
+    var chatRequestInFlight = false
+    var localChatHintWindow: ChatHintWindow?
+    var chatHintHideWorkItem: DispatchWorkItem?
     var panel: ControlPanel!
     var localWindow: PetWindow?
     var awaySignWindow: AwaySignWindow?
@@ -1400,6 +2273,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var localRoamTimer: Timer?
     var localAnimationTimer: Timer?
     var visitorPairTimer: Timer?
+    var mousePassthroughTimer: Timer?
+    var knockExpiryTimers: [String: Timer] = [:]
     var latestRuntimeReleaseURL: URL?
     var doNotDisturbUntil: Date?
 
@@ -1412,6 +2287,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let lifePackPath = AppDelegate.value(after: "--life-pack", in: args)
         userId = user
         identity = commandUser == nil ? localIdentity : LocalIdentity(user_id: user, display_name: user)
+        answeredVisitInvitationIds = Set(UserDefaults.standard.stringArray(forKey: "answeredVisitInvitationIds:\(user)") ?? [])
+        lastEventId = UserDefaults.standard.integer(forKey: "lastEventId:\(user)")
         relay = RelayClient(baseURL: URL(string: relayURL)!)
         lifePack = PetLifePackLoader.load(for: user, lifePackPath: lifePackPath)
         animationResolver = AnimationResolver(states: lifePack.pack.animation_states ?? [:])
@@ -1419,6 +2296,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store = LocalPetStore(userId: user, petId: lifePackPath == nil ? nil : runtimeProfile.pet_id)
         localState = store.load(defaultProfile: runtimeProfile)
         localState.profile = runtimeProfile
+        let beforeCount = localState.life_log.count
+        var seenTexts: Set<String> = []
+        localState.life_log = localState.life_log.filter { entry in
+            if seenTexts.contains(entry.text) { return false }
+            seenTexts.insert(entry.text)
+            return true
+        }
+        if localState.life_log.count != beforeCount {
+            FileHandle.standardError.write(Data("[PetY] life_log 去重：\(beforeCount) → \(localState.life_log.count)\n".utf8))
+        }
         store.save(localState)
         super.init()
     }
@@ -1426,6 +2313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         panel = ControlPanel()
+        panel.chatHistoryProvider = { [weak self] in self?.recentChatLinesForMenu() ?? [] }
         panel.onSendVisit = { [weak self] friend in self?.sendVisit(to: friend) }
         panel.onReturn = { [weak self] in self?.returnVisitor() }
         panel.onRecallPet = { [weak self] in self?.recallLocalPet() }
@@ -1435,14 +2323,150 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onDoNotDisturb = { [weak self] minutes in self?.enableDoNotDisturb(minutes: minutes) }
         panel.onCheckUpdate = { [weak self] in self?.checkForRuntimeUpdate(silent: false) }
         panel.onOpenUpdate = { [weak self] in self?.openRuntimeReleasePage() }
+        panel.onOpenAISettings = { [weak self] in self?.openAISettings() }
+        panel.onQuit = { [weak self] in self?.quitFromMenu() }
 
         restorePersistentLogToPanel()
         createLocalPet()
+        startMousePassthroughTracking()
         bootstrap()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    private func openAISettings() {
+        let controller = AISettingsWindowController(
+            config: appConfig,
+            apiKey: PetYKeychain.readAPIKey(),
+            onSave: { [weak self] config in
+                self?.appConfig = config
+                self?.log(config.chat.enabled ? "AI 对话已启用。" : "AI 对话已关闭。")
+            }
+        )
+        aiSettingsWindowController = controller
+        controller.showWindow(nil)
+        controller.window?.center()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func quitFromMenu() {
+        stopLaunchAgentsForUserQuit()
+        NSApp.terminate(nil)
+    }
+
+    private func stopLaunchAgentsForUserQuit() {
+        let uid = String(getuid())
+        let launchAgentDir = NSHomeDirectory() + "/Library/LaunchAgents"
+        let commands = [
+            ["remove", "com.pety.desktop"],
+            ["remove", "com.pety.runtime"],
+            ["bootout", "gui/\(uid)", "\(launchAgentDir)/com.pety.desktop.plist"],
+            ["bootout", "gui/\(uid)", "\(launchAgentDir)/com.pety.runtime.plist"]
+        ]
+        for command in commands {
+            runLaunchctl(command)
+        }
+    }
+
+    private func runLaunchctl(_ arguments: [String]) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return
+        }
+    }
+
+    private func startMousePassthroughTracking() {
+        mousePassthroughTimer?.invalidate()
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            self?.updatePetMousePassthrough()
+        }
+        mousePassthroughTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func updatePetMousePassthrough() {
+        let mouse = NSEvent.mouseLocation
+        let windows = [localWindow] + visitors.values.map { Optional($0.window) }
+        for window in windows.compactMap({ $0 }) {
+            guard window.isVisible, let view = window.contentView as? PetView else { continue }
+            let windowPoint = window.convertPoint(fromScreen: mouse)
+            let shouldReceiveMouse = view.isDraggingPet || view.isInteractiveWindowPoint(windowPoint)
+            if window.ignoresMouseEvents == shouldReceiveMouse {
+                window.ignoresMouseEvents = !shouldReceiveMouse
+            }
+        }
+        updateLocalChatHint(mouse: mouse)
+    }
+
+    private func updateLocalChatHint(mouse: NSPoint) {
+        guard let localWindow, localWindow.isVisible,
+              let view = localWindow.contentView as? PetView else {
+            hideChatHint(immediately: true)
+            return
+        }
+        let onPet = view.isInteractiveWindowPoint(localWindow.convertPoint(fromScreen: mouse))
+        let onHint = localChatHintWindow?.frame.insetBy(dx: -8, dy: -8).contains(mouse) ?? false
+        // Bridge zone: rectangle that spans from pet's right edge to where the hint sits,
+        // so cursor in transit between the two does not collapse the hint.
+        let bridge = NSRect(
+            x: localWindow.frame.midX,
+            y: localWindow.frame.minY + 30,
+            width: 120,
+            height: 60
+        ).contains(mouse)
+        let allow = appConfig.chat.enabled
+            && chatInputWindow == nil
+            && !view.isDraggingPet
+            && (onPet || onHint || bridge)
+        if allow {
+            chatHintHideWorkItem?.cancel()
+            chatHintHideWorkItem = nil
+            showChatHint(anchor: localWindow.frame)
+        } else if localChatHintWindow != nil && chatHintHideWorkItem == nil {
+            let work = DispatchWorkItem { [weak self] in
+                self?.chatHintHideWorkItem = nil
+                self?.hideChatHint(immediately: true)
+            }
+            chatHintHideWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        }
+    }
+
+    private func showChatHint(anchor: NSRect) {
+        let size = ChatHintView.size
+        let origin = NSPoint(
+            x: anchor.midX + 50,
+            y: anchor.minY + 56
+        )
+        if let window = localChatHintWindow {
+            if window.frame.origin != origin {
+                window.setFrameOrigin(origin)
+            }
+            return
+        }
+        let _ = size
+        localChatHintWindow = ChatHintWindow(origin: origin) { [weak self] in
+            self?.hideChatHint()
+            self?.startLocalChatOrFallback()
+        }
+    }
+
+    private func hideChatHint(immediately: Bool = false) {
+        if immediately {
+            chatHintHideWorkItem?.cancel()
+            chatHintHideWorkItem = nil
+        }
+        localChatHintWindow?.close()
+        localChatHintWindow = nil
     }
 
     private func createLocalPet() {
@@ -1831,9 +2855,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             self?.panel.setStatus("\(self?.localPet.name ?? "宠物") 已出门")
                             self?.sayLocal("对方开门啦，我出门了。")
                             self?.showAwaySign(to: friendName)
+                            if let name = self?.localPet.name {
+                                self?.remember("\(name) 出门去了 \(friendName) 家。")
+                            }
                         } else {
                             self?.panel.setStatus("正在等 \(friendName) 开门")
                             self?.sayLocal("我先敲敲门。")
+                            if let name = self?.localPet.name {
+                                self?.remember("\(name) 在 \(friendName) 家门口敲了敲门。")
+                            }
                         }
                         self?.log("创建串门请求：\(response.visit.visit_id)")
                     case .failure(let error):
@@ -1900,7 +2930,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if handledEventIds.count > 300 {
             handledEventIds = Set(handledEventIds.sorted().suffix(200))
         }
+        let previousLastEventId = lastEventId
         lastEventId = max(lastEventId, event.id)
+        if lastEventId != previousLastEventId {
+            UserDefaults.standard.set(lastEventId, forKey: "lastEventId:\(userId)")
+        }
         return true
     }
 
@@ -1943,9 +2977,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 showVisitor(payload)
             }
         case "visit_status":
-            if let visit = try? decoder.decode(VisitSession.self, from: data),
-               visit.owner_user_id == userId {
-                handleOutgoingVisitStatus(visit)
+            if let visit = try? decoder.decode(VisitSession.self, from: data) {
+                if visit.owner_user_id == userId {
+                    handleOutgoingVisitStatus(visit)
+                }
+                if visit.host_user_id == userId {
+                    handleIncomingVisitStatus(visit)
+                }
             }
         case "friend_added":
             if let payload = try? decoder.decode(FriendAddedPayload.self, from: data),
@@ -1980,6 +3018,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 sayLocal(receipt.pet_voice)
                 remember(receipt.life_log_entry)
                 remember(receipt.pet_voice)
+                for hint in (receipt.memory_hints ?? []).prefix(5)
+                    where !hint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    remember("串门记忆：\(hint)")
+                }
+                if let excerpts = receipt.chat_excerpts, !excerpts.isEmpty {
+                    let sample = excerpts.suffix(4).map { entry -> String in
+                        let speaker = entry.role == "pet" ? localPet.name : "对方"
+                        return "\(speaker)：\(entry.text)"
+                    }.joined(separator: " / ")
+                    remember("串门聊天片段：\(sample)")
+                }
                 rememberMemory(receipt)
                 showReturnedMessagesIfNeeded(receipt)
             }
@@ -2073,7 +3122,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func handleIncomingVisitStatus(_ visit: VisitSession) {
+        guard visit.status != "pending" else { return }
+        closeKnockWindow(visitId: visit.visit_id)
+    }
+
     private func answerVisitRequest(_ payload: VisitStartedPayload) {
+        guard payload.visit.status == "pending",
+              !isExpiredVisitRequest(payload.visit) else { return }
         if visitors.count >= maxVisitors {
             decideVisitRequest(payload, accept: false, logText: "桌面来访宠物已满，已拒绝 \(payload.profile.name) 来串门。")
             return
@@ -2089,18 +3145,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             petName: payload.profile.name,
             message: "它想来你的桌面玩一会儿。",
             onAccept: { [weak self] in
-                self?.knockWindows[payload.visit.visit_id]?.close()
-                self?.knockWindows[payload.visit.visit_id] = nil
+                self?.closeKnockWindow(visitId: payload.visit.visit_id)
                 self?.decideVisitRequest(payload, accept: true, logText: "已同意 \(payload.profile.name) 来串门。")
             },
             onDecline: { [weak self] in
-                self?.knockWindows[payload.visit.visit_id]?.close()
-                self?.knockWindows[payload.visit.visit_id] = nil
+                self?.closeKnockWindow(visitId: payload.visit.visit_id)
                 self?.decideVisitRequest(payload, accept: false, logText: "已拒绝 \(payload.profile.name) 来串门。")
             }
         )
         knockWindows[payload.visit.visit_id] = window
+        scheduleKnockExpiry(for: payload.visit)
         log("\(payload.profile.name) 正在敲门。")
+    }
+
+    private func closeKnockWindow(visitId: String) {
+        knockWindows[visitId]?.close()
+        knockWindows[visitId] = nil
+        knockExpiryTimers[visitId]?.invalidate()
+        knockExpiryTimers[visitId] = nil
+    }
+
+    private func scheduleKnockExpiry(for visit: VisitSession) {
+        guard let expiresAt = visit.request_expires_at,
+              let expiry = ISO8601DateFormatter().date(from: expiresAt) else { return }
+        let interval = max(0, expiry.timeIntervalSinceNow)
+        knockExpiryTimers[visit.visit_id]?.invalidate()
+        knockExpiryTimers[visit.visit_id] = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.closeKnockWindow(visitId: visit.visit_id)
+        }
+    }
+
+    private func isExpiredVisitRequest(_ visit: VisitSession) -> Bool {
+        guard let expiresAt = visit.request_expires_at,
+              let expiry = ISO8601DateFormatter().date(from: expiresAt) else { return false }
+        return Date() > expiry
     }
 
     private func decideVisitRequest(_ payload: VisitStartedPayload, accept: Bool, logText: String) {
@@ -2127,7 +3205,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func answerVisitInvitation(_ payload: VisitInvitationPayload) {
         let requestId = payload.invitation.request_id
-        guard !activeVisitInvitationIds.contains(requestId),
+        guard payload.invitation.status == "pending",
+              !isExpiredVisitInvitation(payload.invitation),
+              !activeVisitInvitationIds.contains(requestId),
               !answeredVisitInvitationIds.contains(requestId) else { return }
         activeVisitInvitationIds.insert(requestId)
         let requesterName = payload.requester?.display_name ?? payload.invitation.requester_user_id
@@ -2145,8 +3225,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         decideVisitInvitation(payload.invitation, accept: accepted, requesterName: requesterName)
     }
 
+    private func isExpiredVisitInvitation(_ invitation: VisitInvitation) -> Bool {
+        guard let expiresAt = invitation.expires_at,
+              let expiry = ISO8601DateFormatter().date(from: expiresAt) else { return false }
+        return Date() > expiry
+    }
+
     private func decideVisitInvitation(_ invitation: VisitInvitation, accept: Bool, requesterName: String) {
-        answeredVisitInvitationIds.insert(invitation.request_id)
+        markVisitInvitationAnswered(invitation.request_id)
         let body = VisitDecisionRequest(user_id: userId, action: accept ? "accept" : "decline")
         relay.post("api/visit-invitations/\(invitation.request_id)/decision", body: body) { [weak self] (result: Result<VisitInvitationResponse, Error>) in
             DispatchQueue.main.async {
@@ -2165,6 +3251,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private func markVisitInvitationAnswered(_ requestId: String) {
+        answeredVisitInvitationIds.insert(requestId)
+        if answeredVisitInvitationIds.count > 300 {
+            answeredVisitInvitationIds = Set(answeredVisitInvitationIds.sorted().suffix(200))
+        }
+        UserDefaults.standard.set(Array(answeredVisitInvitationIds), forKey: "answeredVisitInvitationIds:\(userId)")
     }
 
     private func materializeVisitorAssets(_ payload: VisitStartedPayload) -> URL? {
@@ -2292,14 +3386,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 switch result {
                 case .success:
+                    let targetName = self?.outgoingVisitTargetName ?? "朋友"
+                    let petName = self?.localPet.name ?? "宠物"
                     if visit.status == "pending" {
                         self?.outgoingVisit = nil
                         self?.outgoingVisitTargetName = nil
                         self?.panel.setStatus("已取消敲门")
                         self?.log("已取消串门请求。")
+                        self?.remember("\(petName) 取消了去 \(targetName) 家的串门。")
                     } else {
                         self?.panel.setStatus("正在回家")
                         self?.log("已喊宠物回家。")
+                        self?.remember("你把 \(petName) 从 \(targetName) 家喊回来了。")
                     }
                 case .failure(let error):
                     if self?.isLostVisitError(error) == true {
@@ -2341,6 +3439,507 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func sayLocal(_ text: String) {
         (localWindow?.contentView as? PetView)?.say(text)
+    }
+
+    private func sayLocalChatReply(_ text: String) {
+        (localWindow?.contentView as? PetView)?.say(text, minimum: 8.0, cap: 24.0, perCharacter: 0.18)
+    }
+
+    private func showLocalChatPrompt() {
+        guard appConfig.chat.enabled else {
+            sayLocal("我还没接上脑袋，先去 AI 设置里打开聊天吧。")
+            openAISettings()
+            return
+        }
+        guard !PetYKeychain.readAPIKey().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            sayLocal("我还没有 API Key，先去设置里给我配一下吧。")
+            openAISettings()
+            return
+        }
+        guard let localWindow else { return }
+
+        closeChatInputWindow()
+        let origin = chatInputOrigin(for: localWindow.frame)
+        let chatWindow = PetChatInputWindow(
+            origin: origin,
+            placeholder: "跟 \(localPet.name) 说点什么...",
+            onSend: { [weak self] text in
+                self?.closeChatInputWindow()
+                self?.sendLocalPetChat(text)
+            },
+            onCancel: { [weak self] in
+                self?.closeChatInputWindow()
+            }
+        )
+        chatInputWindow = chatWindow
+        installChatDismissMonitors()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func closeChatInputWindow() {
+        chatInputWindow?.close()
+        chatInputWindow = nil
+        if let monitor = chatDismissLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            chatDismissLocalMonitor = nil
+        }
+        if let monitor = chatDismissGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            chatDismissGlobalMonitor = nil
+        }
+    }
+
+    private func installChatDismissMonitors() {
+        chatDismissLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self, let window = self.chatInputWindow else { return event }
+            if event.window === window { return event }
+            self.closeChatInputWindow()
+            return event
+        }
+        chatDismissGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.closeChatInputWindow()
+        }
+    }
+
+    private func visitorChatPetId(_ visitId: String) -> String {
+        "visit_\(visitId)"
+    }
+
+    private func showVisitorChatPrompt(visitId: String) {
+        guard let visitor = visitors[visitId] else { return }
+        guard appConfig.chat.enabled else {
+            sayLocal("我还没接上脑袋，先去 AI 设置里打开聊天吧。")
+            openAISettings()
+            return
+        }
+        guard !PetYKeychain.readAPIKey().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            sayLocal("我还没有 API Key，先去设置里给我配一下吧。")
+            openAISettings()
+            return
+        }
+        closeChatInputWindow()
+        let origin = chatInputOrigin(for: visitor.window.frame)
+        let chatWindow = PetChatInputWindow(
+            origin: origin,
+            placeholder: "跟 \(visitor.profile.name) 说点什么...",
+            onSend: { [weak self] text in
+                self?.closeChatInputWindow()
+                self?.sendVisitorChat(visitId: visitId, userText: text)
+            },
+            onCancel: { [weak self] in
+                self?.closeChatInputWindow()
+            }
+        )
+        chatInputWindow = chatWindow
+        installChatDismissMonitors()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func sendVisitorChat(visitId: String, userText: String) {
+        guard let visitor = visitors[visitId] else { return }
+        guard !chatRequestInFlight else {
+            visitorView(visitId: visitId)?.say("让我先把上一句说完。")
+            return
+        }
+        let chatConfig = appConfig.chat
+        let apiKey = PetYKeychain.readAPIKey().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: chatConfig.base_url.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions"), !apiKey.isEmpty else {
+            sayLocal("API Key 还没设置。")
+            return
+        }
+        chatRequestInFlight = true
+        let petKey = visitorChatPetId(visitId)
+        chatStore.append(role: "user", text: userText, petId: petKey)
+        recordVisitEvent(visitId: visitId, type: "host_chat", data: ["text": userText])
+        panel.refresh()
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let body: [String: Any] = [
+            "model": chatConfig.model,
+            "messages": visitorChatMessages(for: visitor, userText: userText),
+            "temperature": chatConfig.temperature,
+            "max_tokens": 220
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.chatRequestInFlight = false
+                if let error {
+                    self.visitorView(visitId: visitId)?.say("我有点听不清你说的。")
+                    self.log("访客聊天失败：\(error.localizedDescription)")
+                    return
+                }
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard (200..<300).contains(statusCode), let data else {
+                    self.visitorView(visitId: visitId)?.say("我脑袋有点蒙。")
+                    self.log("访客聊天失败：HTTP \(statusCode)")
+                    return
+                }
+                let parsed = self.parseChatResponse(data)
+                let reply = parsed.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                let finalReply = reply.isEmpty ? "我听见啦。" : reply
+                self.visitorView(visitId: visitId)?.say(finalReply, minimum: 8.0, cap: 24.0, perCharacter: 0.18)
+                self.chatStore.append(role: "pet", text: finalReply, petId: petKey)
+                self.recordVisitEvent(visitId: visitId, type: "visitor_chat", data: ["text": finalReply])
+                self.panel.refresh()
+                if let visitor = self.visitors[visitId] {
+                    visitor.chatTurns += 1
+                    for memory in parsed.memoryCandidates.prefix(3) where !memory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        visitor.chatMemoryCandidates.append(memory)
+                        self.recordVisitEvent(visitId: visitId, type: "visitor_memory_hint", data: ["text": memory])
+                    }
+                }
+                if let action = parsed.action {
+                    self.performVisitorChatAction(action, visitId: visitId)
+                }
+                self.showVisitorChatPrompt(visitId: visitId)
+            }
+        }.resume()
+    }
+
+    private func visitorChatMessages(for visitor: VisitorProjection, userText: String) -> [[String: String]] {
+        let petKey = visitorChatPetId(visitor.visit.visit_id)
+        var messages: [[String: String]] = [["role": "system", "content": visitorChatSystemPrompt(visitor: visitor)]]
+        for entry in chatStore.recentMessages(for: petKey, limit: 10) {
+            let role = entry.role == "pet" ? "assistant" : "user"
+            messages.append(["role": role, "content": entry.text])
+        }
+        messages.append(["role": "user", "content": userText])
+        return messages
+    }
+
+    private func visitorChatSystemPrompt(visitor: VisitorProjection) -> String {
+        let pet = visitor.profile
+        let hostName = identity.display_name
+        return """
+你是名叫 \(pet.name) 的桌面宠物，正在朋友 \(hostName) 的桌面做客。
+
+现在时间：\(Self.currentDateTimeString())
+
+你的身份：
+- 名字：\(pet.name)
+- 风格：\(pet.style)
+- 性格：\(pet.personality_card)
+
+回复要求：
+- 像 \(pet.name) 这只宠物本人，不要像 AI 助手，不要说自己是 AI/模型/程序。
+- 你正在做客，与友好的人 \(hostName) 聊天，保持礼貌、好奇、轻快。
+- 回复 1 到 2 句，适合气泡展示。
+- 可用动作白名单：say, rest, move（默认 say 就够了）。
+- memory_candidates 写值得带回家给主人的小事，比如"\(hostName) 家有 ...", "我和 \(hostName) 聊到了 ..." 。
+- 必须只输出 JSON，不要 markdown，不要解释。
+
+JSON 格式：
+{"reply":"给主人的回复","action":{"type":"say"},"memory_candidates":["回家可以告诉主人的事"]}
+"""
+    }
+
+    private func performVisitorChatAction(_ action: String, visitId: String) {
+        let normalized = action.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, normalized != "say" else { return }
+        guard let visitor = visitors[visitId] else { return }
+        let view = visitor.window.contentView as? PetView
+        switch normalized {
+        case "rest":
+            view?.play("rest", returnToIdleAfter: 3.0)
+        case "move":
+            scheduleVisitorRoam(visitId: visitId)
+        default:
+            log("访客聊天里收到未知动作：\(normalized)")
+        }
+    }
+
+    private func chatInputOrigin(for petFrame: NSRect) -> CGPoint {
+        let size = NSSize(width: 330, height: 48)
+        let screen = NSScreen.screens.first { $0.visibleFrame.intersects(petFrame) }?.visibleFrame ?? NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let x = min(max(petFrame.midX - size.width / 2, screen.minX + 12), screen.maxX - size.width - 12)
+        let preferredY = petFrame.maxY + 10
+        let fallbackY = petFrame.minY - size.height - 10
+        let y = preferredY + size.height < screen.maxY ? preferredY : max(screen.minY + 12, fallbackY)
+        return CGPoint(x: x, y: y)
+    }
+
+    private func sendLocalPetChat(_ userText: String) {
+        guard !chatRequestInFlight else {
+            sayLocal("耳朵还在转，等我一下。")
+            return
+        }
+        let chatConfig = appConfig.chat
+        let apiKey = PetYKeychain.readAPIKey().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: chatConfig.base_url.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions"), !apiKey.isEmpty else {
+            sayLocal("AI 设置还没配好。")
+            return
+        }
+
+        chatRequestInFlight = true
+        playLocal(.signature, returnToIdleAfter: 0.8)
+        chatStore.append(role: "user", text: userText, petId: localPet.pet_id)
+        panel.refresh()
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let body: [String: Any] = [
+            "model": chatConfig.model,
+            "messages": chatMessages(for: userText),
+            "temperature": chatConfig.temperature,
+            "max_tokens": 420
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.chatRequestInFlight = false
+                if let error {
+                    self.sayLocal("我脑袋刚刚断线了。")
+                    self.log("AI 聊天失败：\(error.localizedDescription)")
+                    return
+                }
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard (200..<300).contains(statusCode), let data else {
+                    self.sayLocal("模型那边没回我。")
+                    self.log("AI 聊天失败：HTTP \(statusCode)")
+                    return
+                }
+                let parsed = self.parseChatResponse(data)
+                let reply = parsed.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                let finalReply = reply.isEmpty ? "我听见了，但刚才脑袋打了个结。" : reply
+                self.sayLocalChatReply(finalReply)
+                self.chatStore.append(role: "pet", text: finalReply, petId: self.localPet.pet_id)
+                self.panel.refresh()
+                for memory in parsed.memoryCandidates.prefix(3) where !memory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.remember("聊天记忆：\(memory)")
+                }
+                if let action = parsed.action {
+                    self.performChatAction(action)
+                }
+                self.showLocalChatPrompt()
+            }
+        }.resume()
+    }
+
+    private static func currentDateTimeString() -> String {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "zh_CN")
+        df.dateFormat = "yyyy年M月d日 EEEE HH:mm"
+        return df.string(from: Date())
+    }
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let isoFormatterFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static func formatRelativeTime(_ iso: String) -> String {
+        guard let date = isoFormatter.date(from: iso) ?? isoFormatterFractional.date(from: iso) else { return "" }
+        let now = Date()
+        let interval = now.timeIntervalSince(date)
+        let cal = Calendar.current
+        if interval < 60 { return "刚刚" }
+        if interval < 3600 { return "\(Int(interval / 60)) 分钟前" }
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "zh_CN")
+        if cal.isDateInToday(date) {
+            df.dateFormat = "今天 HH:mm"
+        } else if cal.isDateInYesterday(date) {
+            df.dateFormat = "昨天 HH:mm"
+        } else if let days = cal.dateComponents([.day], from: date, to: now).day, days < 7 {
+            df.dateFormat = "\(days) 天前 HH:mm"
+        } else {
+            df.dateFormat = "M月d日 HH:mm"
+        }
+        return df.string(from: date)
+    }
+
+    private func recentChatLinesForMenu(limit: Int = 16) -> [String] {
+        struct MenuItem { let entry: PetChatLogEntry; let speaker: String }
+        var items: [MenuItem] = []
+        for entry in chatStore.recentMessages(for: localPet.pet_id, limit: limit) {
+            items.append(MenuItem(entry: entry, speaker: entry.role == "pet" ? localPet.name : "我"))
+        }
+        for (_, visitor) in visitors {
+            let key = visitorChatPetId(visitor.visit.visit_id)
+            for entry in chatStore.recentMessages(for: key, limit: limit) {
+                items.append(MenuItem(entry: entry, speaker: entry.role == "pet" ? visitor.profile.name : "我"))
+            }
+        }
+        let sorted = items.sorted { $0.entry.created_at > $1.entry.created_at }.prefix(limit)
+        return sorted.map { item in
+            let when = Self.formatRelativeTime(item.entry.created_at)
+            let trimmed = item.entry.text.replacingOccurrences(of: "\n", with: " ")
+            let body = trimmed.count > 40 ? String(trimmed.prefix(40)) + "…" : trimmed
+            return when.isEmpty ? "\(item.speaker)：\(body)" : "[\(when)] \(item.speaker)：\(body)"
+        }
+    }
+
+    private func chatMessages(for userText: String) -> [[String: String]] {
+        var messages: [[String: String]] = [["role": "system", "content": petChatSystemPrompt()]]
+        for entry in chatStore.recentMessages(for: localPet.pet_id, limit: 10) {
+            let role = entry.role == "pet" ? "assistant" : "user"
+            messages.append(["role": role, "content": entry.text])
+        }
+        messages.append(["role": "user", "content": userText])
+        return messages
+    }
+
+    private func petChatSystemPrompt() -> String {
+        let voice = lifePack.pack.voice
+        let memoryRules = lifePack.pack.memory_rules
+        let sampleLines = voice?.sample_lines?.sorted(by: { $0.key < $1.key }).map { "- \($0.key): \($0.value)" }.joined(separator: "\n") ?? ""
+        let lifeLogs = localState.life_log.prefix(12).map { entry -> String in
+            let when = Self.formatRelativeTime(entry.created_at)
+            return when.isEmpty ? "- \(entry.text)" : "- [\(when)] \(entry.text)"
+        }.joined(separator: "\n")
+        let memories = localState.memories.prefix(8).map { "- \($0.life_log_entry) / \($0.pet_voice)" }.joined(separator: "\n")
+        let actions = ["say", "rest", "sleep", "wake", "move", "fetch_ball"].joined(separator: ", ")
+        return """
+你是桌面宠物，不是通用助手。你正在和主人聊天。
+
+现在时间：\(Self.currentDateTimeString())
+
+宠物身份：
+- 名字：\(localPet.name)
+- 风格：\(localPet.style)
+- 性格：\(localPet.personality_card)
+- 语气：\(voice?.tone ?? "自然、亲近、简短")
+- 是否用第一人称：\((voice?.first_person ?? true) ? "是" : "否")
+
+参考台词：
+\(sampleLines.isEmpty ? "- 像亲近的宠物一样短短回应。" : sampleLines)
+
+记忆规则：
+- 摘要风格：\(memoryRules?.summary_style ?? "把重要互动写成宠物第一人称的小经历。")
+- 可记事件：\((memoryRules?.remember_events ?? []).joined(separator: ", "))
+
+最近经历：
+\(lifeLogs.isEmpty ? "- 暂无。" : lifeLogs)
+
+带回来的记忆：
+\(memories.isEmpty ? "- 暂无。" : memories)
+
+可用动作白名单：\(actions)
+
+回复要求：
+- 像这只宠物，别像客服。
+- 回复适合气泡展示，尽量 1 到 2 句。
+- 不要说自己是 AI、模型、程序、助手。
+- 如果主人让你做动作，可在 action 里选择白名单动作；第一版动作可以为空。
+- 只把值得长期记住的事实放进 memory_candidates，闲聊不要乱记。
+- 必须只输出 JSON，不要 markdown，不要解释。
+
+JSON 格式：
+{"reply":"给主人的回复","action":{"type":"say"},"memory_candidates":["值得记住的一句话"]}
+"""
+    }
+
+    private func performChatAction(_ action: String) {
+        let normalized = action.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, normalized != "say" else { return }
+        log("聊天动作：\(normalized)")
+        switch normalized {
+        case "rest":
+            clearDoNotDisturb()
+            playLocal(.rest, returnToIdleAfter: 3.0)
+            remember("\(localPet.name) 在聊天中坐了下来歇一会儿。")
+        case "sleep":
+            putLocalPetToSleep()
+        case "wake":
+            if isDoNotDisturbActive() {
+                clearDoNotDisturb()
+            } else {
+                playLocal("idle")
+                sayLocal("我醒着呢。")
+            }
+        case "move":
+            moveLocalPetToRandomSpot()
+        case "fetch_ball", "fetchball":
+            if animationResolver.hasFetchBallAction() {
+                throwBallForLocalPet()
+            } else {
+                sayLocal("我现在还不会捡球。")
+            }
+        default:
+            log("聊天里收到未知动作：\(normalized)")
+        }
+    }
+
+    private func moveLocalPetToRandomSpot() {
+        guard let localWindow else { return }
+        clearDoNotDisturb()
+        localRoamTimer?.invalidate()
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let start = localWindow.frame.origin
+        let usableMinX = screen.minX + 40
+        let usableMaxX = screen.maxX - PetWindow.windowSize.width - 40
+        let usableMinY = screen.minY + 80
+        let usableMaxY = max(usableMinY + 80, screen.maxY - PetWindow.windowSize.height - 200)
+        let target = CGPoint(
+            x: CGFloat.random(in: usableMinX...max(usableMinX + 1, usableMaxX)),
+            y: CGFloat.random(in: usableMinY...max(usableMinY + 1, usableMaxY))
+        )
+        playLocal(.move)
+        let duration = localMoveDuration(from: start, to: target, speed: 220, minimum: 0.8, maximum: 3.0)
+        animateLocalPet(to: target, duration: duration) { [weak self] in
+            self?.playLocal("idle")
+            self?.scheduleLocalSleep()
+            self?.scheduleLocalRoam()
+        }
+        remember("\(localPet.name) 自己走到了另一个角落。")
+    }
+
+    private func parseChatResponse(_ data: Data) -> (reply: String, memoryCandidates: [String], action: String?) {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = root["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any] else {
+            return ("", [], nil)
+        }
+        let content = (message["content"] as? String) ?? ""
+        if let parsed = parsePetReplyJSON(content) {
+            return parsed
+        }
+        return (content, [], nil)
+    }
+
+    private func parsePetReplyJSON(_ content: String) -> (reply: String, memoryCandidates: [String], action: String?)? {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate: String
+        if let start = trimmed.firstIndex(of: "{"), let end = trimmed.lastIndex(of: "}"), start <= end {
+            candidate = String(trimmed[start...end])
+        } else {
+            candidate = trimmed
+        }
+        guard let data = candidate.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let reply = object["reply"] as? String ?? ""
+        let memories = object["memory_candidates"] as? [String] ?? []
+        let action = (object["action"] as? [String: Any])?["type"] as? String
+        return (reply, memories, action)
+    }
+
+    private func startLocalChatOrFallback() {
+        closeInteractionMenu()
+        if appConfig.chat.enabled {
+            showLocalChatPrompt()
+        } else {
+            showLocalInteractionMenu()
+            sayLocal("先去菜单 → AI 对话设置 打开聊天吧。")
+        }
     }
 
     private func showLocalInteractionMenu() {
@@ -2408,9 +4007,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.showFriendActionPicker(friend)
                 })
             } else {
-                actions.append(PetAction(title: "\(friend.display_name) 不在家") { [weak self] in
-                    self?.sayLocal("\(friend.display_name) 现在不在家。")
-                })
+                actions.append(PetAction(title: friend.display_name, isEnabled: false) {})
             }
         }
         actions.append(PetAction(title: "发邀请") { [weak self] in
@@ -2473,6 +4070,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let visitorView = visitorWindow.contentView as? PetView else { return }
         let capabilities = visitorInteractionCapabilities(for: visitorView.profile)
         var actions: [PetAction] = []
+        actions.append(PetAction(title: "聊天") { [weak self] in
+            self?.closeInteractionMenu()
+            self?.showVisitorChatPrompt(visitId: visitId)
+        })
         if capabilities.contains("petting") {
             actions.append(PetAction(title: "摸摸") { [weak self] in
                 self?.closeInteractionMenu()
@@ -2541,18 +4142,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return capabilities
     }
 
-    private func menuOrigin(for petFrame: NSRect, actions: [PetAction]) -> CGPoint {
-        let width = InteractionMenuView.menuWidth(for: InteractionMenuView.buttonWidths(for: actions))
-        return menuOrigin(for: petFrame, menuWidth: width)
+    private func menuOrigin(for petFrame: NSRect, actions: [PetAction], layout: InteractionMenuLayout = .horizontal) -> CGPoint {
+        let size = InteractionMenuView.menuSize(for: InteractionMenuView.buttonWidths(for: actions, layout: layout), layout: layout)
+        return menuOrigin(for: petFrame, menuSize: size)
     }
 
-    private func menuOrigin(for petFrame: NSRect, menuWidth: CGFloat) -> CGPoint {
-        CGPoint(x: petFrame.midX - menuWidth / 2, y: petFrame.minY - 52)
+    private func menuOrigin(for petFrame: NSRect, menuSize: CGSize) -> CGPoint {
+        CGPoint(x: petFrame.midX - menuSize.width / 2, y: petFrame.minY - menuSize.height - 12)
     }
 
-    private func showInteractionMenu(anchor: PetWindow, actions: [PetAction]) {
+    private func showInteractionMenu(anchor: PetWindow, actions: [PetAction], layout: InteractionMenuLayout = .horizontal) {
         closeInteractionMenu()
-        let menu = InteractionMenuWindow(origin: menuOrigin(for: anchor.frame, actions: actions), actions: actions)
+        let menu = InteractionMenuWindow(origin: menuOrigin(for: anchor.frame, actions: actions, layout: layout), actions: actions, layout: layout)
         interactionMenuWindow = menu
         interactionMenuAnchorWindow = anchor
         startInteractionMenuFollowTimer()
@@ -2568,7 +4169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.closeInteractionMenu()
                 return
             }
-            let origin = self.menuOrigin(for: anchor.frame, menuWidth: menu.frame.width)
+            let origin = self.menuOrigin(for: anchor.frame, menuSize: menu.frame.size)
             if abs(menu.frame.origin.x - origin.x) > 0.5 || abs(menu.frame.origin.y - origin.y) > 0.5 {
                 menu.setFrameOrigin(origin)
             }
@@ -2823,8 +4424,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             visitorWindow.animator().setFrameOrigin(visitorTarget)
         } completionHandler: { [weak self] in
             guard let self else { return }
-            self.playLocal(.rest, returnToIdleAfter: 2.8)
-            self.playVisitorRest(visitId: visitId, returnToIdleAfter: 2.8)
+            self.playLocal(.rest, returnToIdleAfter: 8.0)
+            self.playVisitorRest(visitId: visitId, returnToIdleAfter: 8.0)
             self.remember("\(self.localPet.name) 和来访的小客人靠在一起坐了一会儿。")
             self.scheduleLocalRoam()
             self.scheduleLocalSleep()
@@ -3377,11 +4978,16 @@ extension NSColor {
 func ensureSingleInstance() {
     let dir = NSHomeDirectory() + "/Library/Application Support/PetY"
     try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-    let lockPath = dir + "/petydesktop.lock"
+    let args = CommandLine.arguments
+    var instanceKey = "default"
+    if let idx = args.firstIndex(of: "--user"), idx + 1 < args.count {
+        instanceKey = args[idx + 1]
+    }
+    let lockPath = dir + "/petydesktop-\(instanceKey).lock"
     let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
     guard fd != -1 else { return }
     if flock(fd, LOCK_EX | LOCK_NB) != 0 {
-        FileHandle.standardError.write(Data("PetYDesktop already running; exiting duplicate.\n".utf8))
+        FileHandle.standardError.write(Data("PetYDesktop (\(instanceKey)) already running; exiting duplicate.\n".utf8))
         exit(0)
     }
     // Intentionally keep fd open for the process lifetime so the lock is held
