@@ -746,16 +746,47 @@ final class InteractionMenuView: NSView {
         }
     }
 
-    static func menuSize(for buttonWidths: [CGFloat], layout: InteractionMenuLayout = .horizontal) -> CGSize {
+    static func menuSize(for buttonWidths: [CGFloat], layout: InteractionMenuLayout = .horizontal, maxWidth: CGFloat? = nil) -> CGSize {
         switch layout {
         case .horizontal:
-            let width = buttonWidths.reduce(16, +) + CGFloat(max(0, buttonWidths.count - 1) * 8)
-            return CGSize(width: width, height: 48)
+            let resolvedMaxWidth = maxWidth ?? horizontalMaxWidth()
+            let rows = horizontalRows(for: buttonWidths, maxWidth: resolvedMaxWidth)
+            let width = min(resolvedMaxWidth, rows.map { rowWidth(for: $0) }.max() ?? 16)
+            let height = CGFloat(rows.count) * 30 + CGFloat(max(0, rows.count - 1) * 8) + 16
+            return CGSize(width: width, height: height)
         case .vertical:
             let width = min(max(buttonWidths.max() ?? 120, 120), 240) + 16
             let height = CGFloat(buttonWidths.count) * 34 + CGFloat(max(0, buttonWidths.count - 1) * 8) + 16
             return CGSize(width: width, height: height)
         }
+    }
+
+    private static func horizontalMaxWidth() -> CGFloat {
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        return min(620, max(220, screen.width - 32))
+    }
+
+    private static func horizontalRows(for buttonWidths: [CGFloat], maxWidth: CGFloat) -> [[CGFloat]] {
+        guard !buttonWidths.isEmpty else { return [[]] }
+        var rows: [[CGFloat]] = [[]]
+        var currentWidth: CGFloat = 16
+
+        for width in buttonWidths {
+            let nextWidth = rows[rows.count - 1].isEmpty ? currentWidth + width : currentWidth + 8 + width
+            if nextWidth > maxWidth, !rows[rows.count - 1].isEmpty {
+                rows.append([width])
+                currentWidth = 16 + width
+            } else {
+                rows[rows.count - 1].append(width)
+                currentWidth = nextWidth
+            }
+        }
+
+        return rows
+    }
+
+    private static func rowWidth(for row: [CGFloat]) -> CGFloat {
+        row.reduce(16, +) + CGFloat(max(0, row.count - 1) * 8)
     }
 
     init(frame frameRect: NSRect, actions: [PetAction], buttonWidths: [CGFloat], layout: InteractionMenuLayout = .horizontal) {
@@ -769,7 +800,13 @@ final class InteractionMenuView: NSView {
         switch layout {
         case .horizontal:
             var x: CGFloat = 8
+            var y = frameRect.height - 8 - 30
             for (index, action) in actions.enumerated() {
+                let width = buttonWidths[index]
+                if x > 8, x + width > frameRect.width - 8 {
+                    x = 8
+                    y -= 38
+                }
                 let button = NSButton(title: action.title, target: self, action: #selector(actionTapped(_:)))
                 button.tag = index
                 button.isBordered = false
@@ -788,8 +825,7 @@ final class InteractionMenuView: NSView {
                         .foregroundColor: buttonTextColor(for: action)
                     ]
                 )
-                let width = buttonWidths[index]
-                button.frame = NSRect(x: x, y: 8, width: width, height: 30)
+                button.frame = NSRect(x: x, y: y, width: width, height: 30)
                 addSubview(button)
                 x += width + 8
             }
@@ -2574,7 +2610,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.showFriendActionPicker(friend)
                 })
             } else {
-                actions.append(PetAction(title: "\(friend.display_name) 不在家", isEnabled: false) {})
+                actions.append(PetAction(title: friend.display_name, isEnabled: false) {})
             }
         }
         actions.append(PetAction(title: "发邀请") { [weak self] in
