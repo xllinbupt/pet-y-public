@@ -1,7 +1,93 @@
 import AppKit
 import Foundation
+import Security
 
 let PetYRuntimeVersion = "v0.1.34"
+
+
+struct PetYChatConfig: Codable {
+    var enabled: Bool = false
+    var provider: String = "openai_compatible"
+    var base_url: String = "https://api.openai.com/v1"
+    var model: String = "gpt-4.1-mini"
+    var temperature: Double = 0.8
+    var api_key_ref: String = PetYKeychain.apiKeyRef
+}
+
+struct PetYAppConfig: Codable {
+    var chat: PetYChatConfig = PetYChatConfig()
+
+    static var directoryURL: URL {
+        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/PetY")
+    }
+
+    static var fileURL: URL {
+        directoryURL.appendingPathComponent("config.json")
+    }
+
+    static func load() -> PetYAppConfig {
+        guard let data = try? Data(contentsOf: fileURL),
+              let config = try? JSONDecoder().decode(PetYAppConfig.self, from: data) else {
+            return PetYAppConfig()
+        }
+        return config
+    }
+
+    func save() throws {
+        try FileManager.default.createDirectory(at: Self.directoryURL, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(self).write(to: Self.fileURL, options: .atomic)
+    }
+}
+
+enum PetYKeychain {
+    static let service = "PetY"
+    static let apiKeyAccount = "chat.openai_compatible.api_key"
+    static let apiKeyRef = "keychain:PetY/chat.openai_compatible.api_key"
+
+    static func readAPIKey() -> String {
+        read(service: service, account: apiKeyAccount) ?? ""
+    }
+
+    static func saveAPIKey(_ value: String) throws {
+        try save(value, service: service, account: apiKeyAccount)
+    }
+
+    private static func read(service: String, account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let value = String(data: data, encoding: .utf8) else { return nil }
+        return value
+    }
+
+    private static func save(_ value: String, service: String, account: String) throws {
+        let data = Data(value.utf8)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let attributes: [String: Any] = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecSuccess { return }
+        if status != errSecItemNotFound { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+
+        var addQuery = query
+        addQuery[kSecValueData as String] = data
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess { throw NSError(domain: NSOSStatusErrorDomain, code: Int(addStatus)) }
+    }
+}
 
 struct PetProfile: Codable {
     let pet_id: String
@@ -187,9 +273,22 @@ struct AnimationState: Codable {
     let default_facing: String?
 }
 
+struct LifePackVoice: Codable {
+    let tone: String?
+    let first_person: Bool?
+    let sample_lines: [String: String]?
+}
+
+struct LifePackMemoryRules: Codable {
+    let summary_style: String?
+    let remember_events: [String]?
+}
+
 struct PetLifePack: Codable {
     let schema_version: String
     let profile: PetProfile
+    let voice: LifePackVoice?
+    let memory_rules: LifePackMemoryRules?
     let animation_states: [String: AnimationState]?
 }
 
@@ -329,7 +428,7 @@ enum PetLifePackLoader {
            let pack = try? JSONDecoder().decode(PetLifePack.self, from: data) {
             return LoadedLifePack(pack: pack, directoryURL: packURL.deletingLastPathComponent())
         }
-        let fallback = PetLifePack(schema_version: "0.1", profile: fallbackProfile(for: userId), animation_states: nil)
+        let fallback = PetLifePack(schema_version: "0.1", profile: fallbackProfile(for: userId), voice: nil, memory_rules: nil, animation_states: nil)
         return LoadedLifePack(pack: fallback, directoryURL: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
     }
 
@@ -1383,6 +1482,269 @@ final class PetView: NSView {
     }
 }
 
+
+final class AISettingsWindowController: NSWindowController {
+    private struct ProviderPreset {
+        let id: String
+        let title: String
+        let baseURL: String
+        let model: String
+    }
+
+    private let providerPresets = [
+        ProviderPreset(id: "deepseek_official", title: "DeepSeek 官方", baseURL: "https://api.deepseek.com/v1", model: "deepseek-v4-flash")
+    ]
+
+    private let enabledButton = NSButton(checkboxWithTitle: "启用宠物对话", target: nil, action: nil)
+    private let providerPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let baseURLField = PasteFriendlyTextField(frame: .zero)
+    private let modelField = PasteFriendlyTextField(frame: .zero)
+    private let apiKeyField = NSSecureTextField(frame: .zero)
+    private let statusLabel = NSTextField(labelWithString: "")
+    private var config: PetYAppConfig
+    private let onSave: (PetYAppConfig) -> Void
+
+    init(config: PetYAppConfig, apiKey: String, onSave: @escaping (PetYAppConfig) -> Void) {
+        self.config = config
+        self.onSave = onSave
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 330),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "AI 对话设置"
+        window.isReleasedWhenClosed = false
+        super.init(window: window)
+        buildUI(apiKey: apiKey)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func buildUI(apiKey: String) {
+        guard let contentView = window?.contentView else { return }
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(stack)
+
+        enabledButton.state = config.chat.enabled ? .on : .off
+        stack.addArrangedSubview(enabledButton)
+
+        configureProviderPopup()
+        stack.addArrangedSubview(row(label: "Provider", view: providerPopup))
+
+        baseURLField.stringValue = config.chat.base_url
+        baseURLField.placeholderString = "https://api.openai.com/v1"
+        stack.addArrangedSubview(row(label: "Base URL", view: baseURLField))
+
+        modelField.stringValue = config.chat.model
+        modelField.placeholderString = "gpt-4.1-mini"
+        stack.addArrangedSubview(row(label: "Model", view: modelField))
+
+        apiKeyField.stringValue = apiKey
+        apiKeyField.placeholderString = "sk-..."
+        stack.addArrangedSubview(row(label: "API Key", view: apiKeyField))
+
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.lineBreakMode = .byWordWrapping
+        statusLabel.maximumNumberOfLines = 2
+        stack.addArrangedSubview(statusLabel)
+
+        let buttonRow = NSStackView()
+        buttonRow.orientation = .horizontal
+        buttonRow.spacing = 10
+        buttonRow.alignment = .centerY
+        let testButton = NSButton(title: "测试连接", target: self, action: #selector(testConnectionTapped))
+        let saveButton = NSButton(title: "保存", target: self, action: #selector(saveTapped))
+        saveButton.keyEquivalent = "\r"
+        buttonRow.addArrangedSubview(testButton)
+        buttonRow.addArrangedSubview(saveButton)
+        stack.addArrangedSubview(buttonRow)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 22),
+            baseURLField.widthAnchor.constraint(equalToConstant: 290),
+            modelField.widthAnchor.constraint(equalToConstant: 290),
+            apiKeyField.widthAnchor.constraint(equalToConstant: 290),
+            statusLabel.widthAnchor.constraint(equalToConstant: 430),
+            providerPopup.widthAnchor.constraint(equalToConstant: 290)
+        ])
+    }
+
+    private func configureProviderPopup() {
+        providerPopup.removeAllItems()
+        for preset in providerPresets {
+            providerPopup.addItem(withTitle: preset.title)
+            providerPopup.lastItem?.representedObject = preset.id
+        }
+        let selectedId = presetId(for: config.chat)
+        if let item = providerPopup.itemArray.first(where: { $0.representedObject as? String == selectedId }) {
+            providerPopup.select(item)
+        }
+        providerPopup.target = self
+        providerPopup.action = #selector(providerChanged)
+    }
+
+    private func presetId(for chatConfig: PetYChatConfig) -> String {
+        if providerPresets.contains(where: { $0.id == chatConfig.provider && $0.id != "openai_compatible" }) {
+            return chatConfig.provider
+        }
+        if let matching = providerPresets.first(where: { !$0.baseURL.isEmpty && $0.baseURL == chatConfig.base_url }) {
+            return matching.id
+        }
+        return "openai_compatible"
+    }
+
+    @objc private func providerChanged() {
+        guard let id = providerPopup.selectedItem?.representedObject as? String,
+              let preset = providerPresets.first(where: { $0.id == id }),
+              id != "openai_compatible" else { return }
+        baseURLField.stringValue = preset.baseURL
+        modelField.stringValue = preset.model
+    }
+
+    private func row(label: String, view: NSView) -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 12
+        row.alignment = .centerY
+        let labelView = NSTextField(labelWithString: label)
+        labelView.alignment = .right
+        labelView.widthAnchor.constraint(equalToConstant: 92).isActive = true
+        row.addArrangedSubview(labelView)
+        row.addArrangedSubview(view)
+        return row
+    }
+
+    private func readFields() -> PetYChatConfig {
+        PetYChatConfig(
+            enabled: enabledButton.state == .on,
+            provider: providerPopup.selectedItem?.representedObject as? String ?? "openai_compatible",
+            base_url: normalizedBaseURL(),
+            model: modelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+            temperature: 1.0,
+            api_key_ref: PetYKeychain.apiKeyRef
+        )
+    }
+
+    private func normalizedBaseURL() -> String {
+        baseURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    @objc private func saveTapped() {
+        do {
+            config.chat = readFields()
+            try PetYKeychain.saveAPIKey(apiKeyField.stringValue)
+            try config.save()
+            onSave(config)
+            statusLabel.textColor = .systemGreen
+            statusLabel.stringValue = "已保存，API Key 存在钥匙串里。"
+        } catch {
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "保存失败：\(error.localizedDescription)"
+        }
+    }
+
+    @objc private func testConnectionTapped() {
+        let chatConfig = readFields()
+        guard !apiKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "先填 API Key。"
+            return
+        }
+        guard let url = URL(string: chatConfig.base_url + "/chat/completions") else {
+            statusLabel.textColor = .systemRed
+            statusLabel.stringValue = "Base URL 不对。"
+            return
+        }
+
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.stringValue = "测试中..."
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKeyField.stringValue)", forHTTPHeaderField: "Authorization")
+        let body: [String: Any] = [
+            "model": chatConfig.model,
+            "messages": [["role": "user", "content": "ping"]],
+            "temperature": chatConfig.temperature,
+            "max_tokens": 8
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let error {
+                    self.statusLabel.textColor = .systemRed
+                    self.statusLabel.stringValue = "测试失败：\(error.localizedDescription)"
+                    return
+                }
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard (200..<300).contains(statusCode) else {
+                    let detail = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                    self.statusLabel.textColor = .systemRed
+                    self.statusLabel.stringValue = "测试失败：HTTP \(statusCode) \(detail.prefix(120))"
+                    return
+                }
+                self.statusLabel.textColor = .systemGreen
+                self.statusLabel.stringValue = "连接成功。"
+            }
+        }.resume()
+    }
+}
+
+
+struct PetChatLogEntry: Codable {
+    let role: String
+    let text: String
+    let created_at: String
+}
+
+final class PetChatStore {
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+    private let directoryURL: URL
+
+    init(appSupportURL: URL = PetYAppConfig.directoryURL) {
+        self.directoryURL = appSupportURL.appendingPathComponent("Chats")
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    }
+
+    func recentMessages(for petId: String, limit: Int = 10) -> [PetChatLogEntry] {
+        guard let data = try? Data(contentsOf: fileURL(for: petId)),
+              let entries = try? decoder.decode([PetChatLogEntry].self, from: data) else { return [] }
+        return Array(entries.suffix(limit))
+    }
+
+    func append(role: String, text: String, petId: String) {
+        var entries = recentMessages(for: petId, limit: 80)
+        entries.append(PetChatLogEntry(role: role, text: text, created_at: ISO8601DateFormatter().string(from: Date())))
+        if entries.count > 80 {
+            entries.removeFirst(entries.count - 80)
+        }
+        do {
+            try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            try encoder.encode(entries).write(to: fileURL(for: petId), options: .atomic)
+        } catch {
+            // Chat history is helpful context, but it should never block the pet UI.
+        }
+    }
+
+    private func fileURL(for petId: String) -> URL {
+        let safeName = petId.replacingOccurrences(of: "/", with: "_")
+        return directoryURL.appendingPathComponent("\(safeName).json")
+    }
+}
+
 final class ControlPanel: NSObject {
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     var title = "Pet Y Runtime"
@@ -1402,6 +1764,7 @@ final class ControlPanel: NSObject {
     var onDoNotDisturb: ((Int) -> Void)?
     var onCheckUpdate: (() -> Void)?
     var onOpenUpdate: (() -> Void)?
+    var onOpenAISettings: (() -> Void)?
     var onQuit: (() -> Void)?
 
     override init() {
@@ -1464,6 +1827,7 @@ final class ControlPanel: NSObject {
         } else {
             menu.addItem(actionItem(title: "检查更新", action: #selector(checkUpdateTapped)))
         }
+        menu.addItem(actionItem(title: "AI 对话设置...", action: #selector(openAISettingsTapped)))
         menu.addItem(.separator())
 
         let friendsItem = NSMenuItem(title: "好友", action: nil, keyEquivalent: "")
@@ -1549,10 +1913,11 @@ final class ControlPanel: NSObject {
     @objc private func doNotDisturbTapped(_ sender: NSMenuItem) { onDoNotDisturb?(sender.representedObject as? Int ?? 30) }
     @objc private func checkUpdateTapped() { onCheckUpdate?() }
     @objc private func openUpdateTapped() { onOpenUpdate?() }
+    @objc private func openAISettingsTapped() { onOpenAISettings?() }
     @objc private func quitTapped() { onQuit?() ?? NSApp.terminate(nil) }
 }
 
-final class PasteFriendlyTextField: NSTextField {
+class PasteFriendlyTextField: NSTextField {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown,
               event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
@@ -1576,6 +1941,134 @@ final class PasteFriendlyTextField: NSTextField {
     }
 }
 
+
+final class PetChatTextField: PasteFriendlyTextField {
+    var onSubmit: (() -> Void)?
+    var onCancel: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 36 || event.keyCode == 76 {
+            onSubmit?()
+            return
+        }
+        if event.keyCode == 53 {
+            onCancel?()
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
+final class PetChatInputWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    init(origin: CGPoint, placeholder: String, onSend: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+        let size = NSSize(width: 330, height: 48)
+        super.init(
+            contentRect: NSRect(origin: origin, size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        isReleasedWhenClosed = false
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        level = .floating
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        contentView = PetChatInputView(frame: NSRect(origin: .zero, size: size), placeholder: placeholder, onSend: onSend, onCancel: onCancel)
+        makeKeyAndOrderFront(nil)
+        (contentView as? PetChatInputView)?.focusInput()
+    }
+}
+
+final class PetChatInputView: NSView {
+    private let input: PetChatTextField
+    private let sendButton: NSButton
+    private let onSend: (String) -> Void
+    private let onCancel: () -> Void
+
+    init(frame frameRect: NSRect, placeholder: String, onSend: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+        self.input = PetChatTextField(frame: .zero)
+        self.sendButton = NSButton(title: "说", target: nil, action: nil)
+        self.onSend = onSend
+        self.onCancel = onCancel
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+
+        input.placeholderString = placeholder
+        input.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        input.isBordered = false
+        input.drawsBackground = false
+        input.focusRingType = .none
+        input.translatesAutoresizingMaskIntoConstraints = false
+        input.onSubmit = { [weak self] in self?.submit() }
+        input.onCancel = { [weak self] in self?.cancel() }
+        addSubview(input)
+
+        sendButton.bezelStyle = .rounded
+        sendButton.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        sendButton.target = self
+        sendButton.action = #selector(sendTapped)
+        sendButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(sendButton)
+
+        NSLayoutConstraint.activate([
+            input.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            input.centerYAnchor.constraint(equalTo: centerYAnchor),
+            input.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -10),
+            input.heightAnchor.constraint(equalToConstant: 26),
+            sendButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            sendButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            sendButton.widthAnchor.constraint(equalToConstant: 48)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func focusInput() {
+        window?.makeFirstResponder(input)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.clear.setFill()
+        dirtyRect.fill()
+        let bubbleRect = bounds.insetBy(dx: 3, dy: 3)
+        let path = NSBezierPath(roundedRect: bubbleRect, xRadius: 18, yRadius: 18)
+        NSColor.white.withAlphaComponent(0.96).setFill()
+        path.fill()
+        NSColor.black.withAlphaComponent(0.14).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        let tail = NSBezierPath()
+        tail.move(to: NSPoint(x: 74, y: 6))
+        tail.line(to: NSPoint(x: 92, y: -1))
+        tail.line(to: NSPoint(x: 108, y: 6))
+        tail.close()
+        NSColor.white.withAlphaComponent(0.96).setFill()
+        tail.fill()
+    }
+
+    @objc private func sendTapped() {
+        submit()
+    }
+
+    private func submit() {
+        let text = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        onSend(text)
+    }
+
+    private func cancel() {
+        onCancel()
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let userId: String
     let identity: LocalIdentity
@@ -1585,6 +2078,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let animationResolver: AnimationResolver
     var localState: LocalPetState
     var localPet: PetProfile { localState.profile }
+    var appConfig = PetYAppConfig.load()
+    var aiSettingsWindowController: AISettingsWindowController?
+    var chatInputWindow: PetChatInputWindow?
+    let chatStore = PetChatStore()
+    var chatRequestInFlight = false
     var panel: ControlPanel!
     var localWindow: PetWindow?
     var awaySignWindow: AwaySignWindow?
@@ -1647,6 +2145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onDoNotDisturb = { [weak self] minutes in self?.enableDoNotDisturb(minutes: minutes) }
         panel.onCheckUpdate = { [weak self] in self?.checkForRuntimeUpdate(silent: false) }
         panel.onOpenUpdate = { [weak self] in self?.openRuntimeReleasePage() }
+        panel.onOpenAISettings = { [weak self] in self?.openAISettings() }
         panel.onQuit = { [weak self] in self?.quitFromMenu() }
 
         restorePersistentLogToPanel()
@@ -1657,6 +2156,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    private func openAISettings() {
+        let controller = AISettingsWindowController(
+            config: appConfig,
+            apiKey: PetYKeychain.readAPIKey(),
+            onSave: { [weak self] config in
+                self?.appConfig = config
+                self?.log(config.chat.enabled ? "AI 对话已启用。" : "AI 对话已关闭。")
+            }
+        )
+        aiSettingsWindowController = controller
+        controller.showWindow(nil)
+        controller.window?.center()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func quitFromMenu() {
@@ -2661,6 +3175,187 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         (localWindow?.contentView as? PetView)?.say(text)
     }
 
+    private func showLocalChatPrompt() {
+        guard appConfig.chat.enabled else {
+            sayLocal("我还没接上脑袋，先去 AI 设置里打开聊天吧。")
+            openAISettings()
+            return
+        }
+        guard !PetYKeychain.readAPIKey().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            sayLocal("我还没有 API Key，先去设置里给我配一下吧。")
+            openAISettings()
+            return
+        }
+        guard let localWindow else { return }
+
+        chatInputWindow?.close()
+        let origin = chatInputOrigin(for: localWindow.frame)
+        let chatWindow = PetChatInputWindow(
+            origin: origin,
+            placeholder: "跟 \(localPet.name) 说点什么...",
+            onSend: { [weak self] text in
+                self?.chatInputWindow?.close()
+                self?.chatInputWindow = nil
+                self?.sendLocalPetChat(text)
+            },
+            onCancel: { [weak self] in
+                self?.chatInputWindow?.close()
+                self?.chatInputWindow = nil
+            }
+        )
+        chatInputWindow = chatWindow
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func chatInputOrigin(for petFrame: NSRect) -> CGPoint {
+        let size = NSSize(width: 330, height: 48)
+        let screen = NSScreen.screens.first { $0.visibleFrame.intersects(petFrame) }?.visibleFrame ?? NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let x = min(max(petFrame.midX - size.width / 2, screen.minX + 12), screen.maxX - size.width - 12)
+        let preferredY = petFrame.maxY + 10
+        let fallbackY = petFrame.minY - size.height - 10
+        let y = preferredY + size.height < screen.maxY ? preferredY : max(screen.minY + 12, fallbackY)
+        return CGPoint(x: x, y: y)
+    }
+
+    private func sendLocalPetChat(_ userText: String) {
+        guard !chatRequestInFlight else {
+            sayLocal("耳朵还在转，等我一下。")
+            return
+        }
+        let chatConfig = appConfig.chat
+        let apiKey = PetYKeychain.readAPIKey().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: chatConfig.base_url.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chat/completions"), !apiKey.isEmpty else {
+            sayLocal("AI 设置还没配好。")
+            return
+        }
+
+        chatRequestInFlight = true
+        playLocal(.signature, returnToIdleAfter: 0.8)
+        chatStore.append(role: "user", text: userText, petId: localPet.pet_id)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let body: [String: Any] = [
+            "model": chatConfig.model,
+            "messages": chatMessages(for: userText),
+            "temperature": chatConfig.temperature,
+            "max_tokens": 420
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.chatRequestInFlight = false
+                if let error {
+                    self.sayLocal("我脑袋刚刚断线了。")
+                    self.log("AI 聊天失败：\(error.localizedDescription)")
+                    return
+                }
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard (200..<300).contains(statusCode), let data else {
+                    self.sayLocal("模型那边没回我。")
+                    self.log("AI 聊天失败：HTTP \(statusCode)")
+                    return
+                }
+                let parsed = self.parseChatResponse(data)
+                let reply = parsed.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                let finalReply = reply.isEmpty ? "我听见了，但刚才脑袋打了个结。" : reply
+                self.sayLocal(finalReply)
+                self.chatStore.append(role: "pet", text: finalReply, petId: self.localPet.pet_id)
+                for memory in parsed.memoryCandidates.prefix(3) where !memory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.remember("聊天记忆：\(memory)")
+                }
+            }
+        }.resume()
+    }
+
+    private func chatMessages(for userText: String) -> [[String: String]] {
+        var messages: [[String: String]] = [["role": "system", "content": petChatSystemPrompt()]]
+        for entry in chatStore.recentMessages(for: localPet.pet_id, limit: 10) {
+            let role = entry.role == "pet" ? "assistant" : "user"
+            messages.append(["role": role, "content": entry.text])
+        }
+        messages.append(["role": "user", "content": userText])
+        return messages
+    }
+
+    private func petChatSystemPrompt() -> String {
+        let voice = lifePack.pack.voice
+        let memoryRules = lifePack.pack.memory_rules
+        let sampleLines = voice?.sample_lines?.sorted(by: { $0.key < $1.key }).map { "- \($0.key): \($0.value)" }.joined(separator: "\n") ?? ""
+        let lifeLogs = localState.life_log.prefix(12).map { "- \($0.text)" }.joined(separator: "\n")
+        let memories = localState.memories.prefix(8).map { "- \($0.life_log_entry) / \($0.pet_voice)" }.joined(separator: "\n")
+        let actions = ["say", "rest", "sleep", "wake", "move", "fetch_ball"].joined(separator: ", ")
+        return """
+你是桌面宠物，不是通用助手。你正在和主人聊天。
+
+宠物身份：
+- 名字：\(localPet.name)
+- 风格：\(localPet.style)
+- 性格：\(localPet.personality_card)
+- 语气：\(voice?.tone ?? "自然、亲近、简短")
+- 是否用第一人称：\((voice?.first_person ?? true) ? "是" : "否")
+
+参考台词：
+\(sampleLines.isEmpty ? "- 像亲近的宠物一样短短回应。" : sampleLines)
+
+记忆规则：
+- 摘要风格：\(memoryRules?.summary_style ?? "把重要互动写成宠物第一人称的小经历。")
+- 可记事件：\((memoryRules?.remember_events ?? []).joined(separator: ", "))
+
+最近经历：
+\(lifeLogs.isEmpty ? "- 暂无。" : lifeLogs)
+
+带回来的记忆：
+\(memories.isEmpty ? "- 暂无。" : memories)
+
+可用动作白名单：\(actions)
+
+回复要求：
+- 像这只宠物，别像客服。
+- 回复适合气泡展示，尽量 1 到 2 句。
+- 不要说自己是 AI、模型、程序、助手。
+- 如果主人让你做动作，可在 action 里选择白名单动作；第一版动作可以为空。
+- 只把值得长期记住的事实放进 memory_candidates，闲聊不要乱记。
+- 必须只输出 JSON，不要 markdown，不要解释。
+
+JSON 格式：
+{"reply":"给主人的回复","action":{"type":"say"},"memory_candidates":["值得记住的一句话"]}
+"""
+    }
+
+    private func parseChatResponse(_ data: Data) -> (reply: String, memoryCandidates: [String]) {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = root["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any] else {
+            return ("", [])
+        }
+        let content = (message["content"] as? String) ?? ""
+        if let parsed = parsePetReplyJSON(content) {
+            return parsed
+        }
+        return (content, [])
+    }
+
+    private func parsePetReplyJSON(_ content: String) -> (reply: String, memoryCandidates: [String])? {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate: String
+        if let start = trimmed.firstIndex(of: "{"), let end = trimmed.lastIndex(of: "}"), start <= end {
+            candidate = String(trimmed[start...end])
+        } else {
+            candidate = trimmed
+        }
+        guard let data = candidate.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let reply = object["reply"] as? String ?? ""
+        let memories = object["memory_candidates"] as? [String] ?? []
+        return (reply, memories)
+    }
+
     private func showLocalInteractionMenu() {
         guard let localWindow else { return }
         closeInteractionMenu()
@@ -2668,6 +3363,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             PetAction(title: "摸摸") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.petLocalPet()
+            },
+            PetAction(title: "聊天") { [weak self] in
+                self?.closeInteractionMenu()
+                self?.showLocalChatPrompt()
             }
         ]
         if animationResolver.hasFetchBallAction() {
