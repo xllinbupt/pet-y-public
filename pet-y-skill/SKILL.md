@@ -144,6 +144,17 @@ Static or mostly static states must not jitter. For `idle`, `rest`, and `sleep`,
 
 Canvas size is not enough. The pet's apparent body size must stay consistent across different action states, not only within one sheet. A sleeping, sitting, running, or signature-action pose may change silhouette, but the core character should occupy the same approximate visual scale and share the same anchor convention as the approved reference. Do not let one state fill the frame while another state is tiny. If an action needs distance or dramatic size change, describe it as a Runtime transform in `behavior.interactions` instead of baking different pet scales into the sprite art.
 
+## Sprite Transparency Requirements
+
+For desktop click-through support, generated sprite sheets must preserve real alpha transparency:
+
+- Export PNG sprite sheets with alpha preserved; the canvas outside the pet body must be genuinely transparent.
+- Never use solid white, gray, checkerboard, or other fake-transparent backgrounds.
+- Keep the pet body as the only intentionally clickable opaque region.
+- Avoid large semi-transparent glows, shadows, dust, or aura effects unless they are meant to be clickable.
+- Use a fixed canvas size for every frame in a state, with a stable feet/body anchor and consistent alignment.
+- Keep apparent body scale consistent across states; use Runtime transforms for dramatic scale or distance changes.
+
 Direction matters for movement states. Generate `move` / `run` / `walk` / `hop` sprite sheets in a consistent canonical direction: prefer right-facing. Set each directional state's `default_facing` to `right` or `left` to match the approved sheet; use `none` for front-facing or directionless states. Runtime flips the sprite from that declared default when the pet moves the other way. Do not mix left-facing and right-facing frames in the same sheet, or the pet will look like it is running backward.
 
 Do not call a pet finished just because the JSON and PNG files exist. A generated pet must pass a visual review: recognizable silhouette, consistent character identity, readable animation, no unintended size/position jitter in static states, consistent apparent body size across all action states, and an appearance the user actually likes.

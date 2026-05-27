@@ -984,6 +984,7 @@ final class PetView: NSView {
     let onDragEnd: (_ from: CGPoint, _ to: CGPoint, _ durationMs: Int) -> Void
     var activeAnimationName = "idle"
     var animationImage: NSImage?
+    var animationBitmap: NSBitmapImageRep?
     var currentFrame = 0
     var renderScale: CGFloat = 1.0
     var facingLeft = false
@@ -1038,23 +1039,67 @@ final class PetView: NSView {
         return super.hitTest(point)
     }
 
+    func isInteractiveWindowPoint(_ point: NSPoint) -> Bool {
+        isInteractivePoint(convert(point, from: nil))
+    }
+
+    var isDraggingPet: Bool {
+        dragStartFrame != nil
+    }
+
     private func isInteractivePoint(_ point: NSPoint) -> Bool {
         if bubbleHitRect()?.contains(point) == true { return true }
-        return petHitRect().contains(point)
+        return isOpaquePetPoint(point)
     }
 
     private func petHitRect() -> NSRect {
         if animationImage != nil {
-            let spriteSize = 64 * renderScale
-            return NSRect(
-                x: (bounds.width - spriteSize) / 2,
-                y: 28 + (64 - spriteSize) / 2,
-                width: spriteSize,
-                height: spriteSize
-            ).insetBy(dx: -10, dy: -10)
+            return spriteTargetRect().insetBy(dx: -10, dy: -10)
         }
 
         return NSRect(x: (bounds.width - 96) / 2, y: 20, width: 96, height: 100)
+    }
+
+    private func spriteTargetRect() -> NSRect {
+        let spriteSize = 64 * renderScale
+        return NSRect(
+            x: (bounds.width - spriteSize) / 2,
+            y: 28 + (64 - spriteSize) / 2,
+            width: spriteSize,
+            height: spriteSize
+        )
+    }
+
+    private func isOpaquePetPoint(_ point: NSPoint) -> Bool {
+        guard let animationState = animationStates[activeAnimationName],
+              let animationImage,
+              let animationBitmap else {
+            return petHitRect().contains(point)
+        }
+
+        let target = spriteTargetRect()
+        guard target.contains(point) else { return false }
+
+        let frameWidth = CGFloat(animationState.frame_width)
+        let frameHeight = CGFloat(animationState.frame_height)
+        guard frameWidth > 0, frameHeight > 0, target.width > 0, target.height > 0 else { return false }
+
+        var normalizedX = (point.x - target.minX) / target.width
+        let normalizedY = (point.y - target.minY) / target.height
+        if shouldMirrorSprite(animationState) {
+            normalizedX = 1 - normalizedX
+        }
+
+        let clampedFrame = max(0, min(currentFrame, animationState.frames - 1))
+        let sourceX = CGFloat(clampedFrame) * frameWidth + normalizedX * frameWidth
+        let sourceY = normalizedY * frameHeight
+
+        let imageScaleX = CGFloat(animationBitmap.pixelsWide) / max(animationImage.size.width, 1)
+        let imageScaleY = CGFloat(animationBitmap.pixelsHigh) / max(animationImage.size.height, 1)
+        let pixelX = max(0, min(animationBitmap.pixelsWide - 1, Int(sourceX * imageScaleX)))
+        let pixelY = max(0, min(animationBitmap.pixelsHigh - 1, Int(sourceY * imageScaleY)))
+
+        return (animationBitmap.colorAt(x: pixelX, y: pixelY)?.alphaComponent ?? 0) > 0.2
     }
 
     private func bubbleHitRect() -> NSRect? {
@@ -1187,6 +1232,7 @@ final class PetView: NSView {
         frameTimer = nil
         currentFrame = 0
         animationImage = nil
+        animationBitmap = nil
 
         guard let animationState = animationStates[activeAnimationName],
               animationState.format == "sprite_sheet_png",
@@ -1201,6 +1247,9 @@ final class PetView: NSView {
               animationState.fps > 0 else { return }
 
         animationImage = image
+        if let tiffData = image.tiffRepresentation {
+            animationBitmap = NSBitmapImageRep(data: tiffData)
+        }
         frameTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / Double(animationState.fps), repeats: true) { [weak self] _ in
             guard let self, let animationState = self.animationStates[self.activeAnimationName] else { return }
             if animationState.loop {
@@ -1259,13 +1308,7 @@ final class PetView: NSView {
             width: frameWidth,
             height: frameHeight
         )
-        let spriteSize = 64 * renderScale
-        let target = NSRect(
-            x: (bounds.width - spriteSize) / 2,
-            y: 28 + (64 - spriteSize) / 2,
-            width: spriteSize,
-            height: spriteSize
-        )
+        let target = spriteTargetRect()
         if shouldMirrorSprite(animationState) {
             NSGraphicsContext.saveGraphicsState()
             let transform = NSAffineTransform()
@@ -1566,6 +1609,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var localRoamTimer: Timer?
     var localAnimationTimer: Timer?
     var visitorPairTimer: Timer?
+    var mousePassthroughTimer: Timer?
     var knockExpiryTimers: [String: Timer] = [:]
     var latestRuntimeReleaseURL: URL?
     var doNotDisturbUntil: Date?
@@ -1607,6 +1651,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         restorePersistentLogToPanel()
         createLocalPet()
+        startMousePassthroughTracking()
         bootstrap()
     }
 
@@ -1644,6 +1689,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             process.waitUntilExit()
         } catch {
             return
+        }
+    }
+
+    private func startMousePassthroughTracking() {
+        mousePassthroughTimer?.invalidate()
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            self?.updatePetMousePassthrough()
+        }
+        mousePassthroughTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func updatePetMousePassthrough() {
+        let mouse = NSEvent.mouseLocation
+        let windows = [localWindow] + visitors.values.map { Optional($0.window) }
+        for window in windows.compactMap({ $0 }) {
+            guard window.isVisible, let view = window.contentView as? PetView else { continue }
+            let windowPoint = window.convertPoint(fromScreen: mouse)
+            let shouldReceiveMouse = view.isDraggingPet || view.isInteractiveWindowPoint(windowPoint)
+            if window.ignoresMouseEvents == shouldReceiveMouse {
+                window.ignoresMouseEvents = !shouldReceiveMouse
+            }
         }
     }
 
