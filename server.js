@@ -492,6 +492,21 @@ function createMemoryReceipt(visit, reason = "departed") {
   const playedTogether = visit.events.find((event) => event.type === "pet_to_pet.walk_together");
   const autonomousRoam = visit.events.find((event) => event.type === "visitor_autonomous_roam");
   const clicked = visit.events.filter((event) => event.type === "clicked").length;
+  const hostChats = visit.events.filter((event) => event.type === "host_chat" && event.data?.text);
+  const visitorChats = visit.events.filter((event) => event.type === "visitor_chat" && event.data?.text);
+  const memoryHints = visit.events
+    .filter((event) => event.type === "visitor_memory_hint" && event.data?.text)
+    .map((event) => cleanMessageText(event.data.text))
+    .filter(Boolean);
+  const chatExcerpts = visit.events
+    .filter((event) => event.type === "host_chat" || event.type === "visitor_chat")
+    .map((event) => ({
+      role: event.type === "visitor_chat" ? "pet" : "host",
+      text: cleanMessageText(event.data?.text || ""),
+      created_at: event.created_at
+    }))
+    .filter((entry) => entry.text)
+    .slice(-12);
   const parts = [`${profile?.name || "宠物"} 去了 ${host?.display_name || visit.host_user_id} 的桌面`];
 
   if (clicked > 0) parts.push(`被轻轻点了 ${clicked} 次`);
@@ -505,6 +520,7 @@ function createMemoryReceipt(visit, reason = "departed") {
     parts.push(peerName ? `和 ${peerName} 一起跑去玩了一会儿` : "和那边的宠物一起跑去玩了一会儿");
   }
   if (autonomousRoam) parts.push("自己在那边桌面上逛了逛");
+  if (visitorChats.length > 0) parts.push(`和 ${host?.display_name || "朋友"} 聊了 ${visitorChats.length} 句`);
 
   if (reason === "host_runtime_offline") parts.push("因为那边突然离线就回家了");
 
@@ -527,6 +543,9 @@ function createMemoryReceipt(visit, reason = "departed") {
   if (!fed && messages.length === 0 && !playedTogether && !satTogether && !greeted && autonomousRoam) {
     petVoice = `我在 ${host?.display_name || "朋友"} 那边自己逛了逛，找到了一个新角落。`;
   }
+  if (visitorChats.length > 0 && !fed && messages.length === 0) {
+    petVoice = `我和 ${host?.display_name || "朋友"} 聊了一会儿，回家了。`;
+  }
 
   if (reason === "host_runtime_offline") {
     petVoice = `我刚刚在 ${host?.display_name || "朋友"} 那里玩，但那边突然安静下来了，我就先回家了。`;
@@ -543,6 +562,8 @@ function createMemoryReceipt(visit, reason = "departed") {
     life_log_entry: lifeLogEntry,
     pet_voice: petVoice,
     messages: messageSummaries,
+    chat_excerpts: chatExcerpts,
+    memory_hints: memoryHints,
     relationship_traces: [
       {
         target_user_id: visit.host_user_id,
