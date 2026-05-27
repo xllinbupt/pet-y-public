@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import Security
 
-let PetYRuntimeVersion = "v0.1.35"
+let PetYRuntimeVersion = "v0.1.36"
 
 
 struct PetYChatConfig: Codable {
@@ -167,6 +167,19 @@ struct AcceptInviteResponse: Codable {
 
 struct FriendAddedPayload: Codable {
     let friend: FriendStatus?
+}
+
+struct RemoveFriendRequest: Codable {
+    let user_id: String
+    let friend_user_id: String
+}
+
+struct RemoveFriendResponse: Codable {
+    let friends: [FriendStatus]
+}
+
+struct FriendRemovedPayload: Codable {
+    let friend_user_id: String
 }
 
 struct VisitInvitation: Codable {
@@ -1785,6 +1798,7 @@ final class ControlPanel: NSObject {
     var onInviteFriendPet: ((String) -> Void)?
     var onDoNotDisturb: ((Int) -> Void)?
     var onCheckUpdate: (() -> Void)?
+    var onRemoveFriend: ((String) -> Void)?
     var onOpenUpdate: (() -> Void)?
     var onOpenAISettings: (() -> Void)?
     var onQuit: (() -> Void)?
@@ -1888,6 +1902,18 @@ final class ControlPanel: NSObject {
         if hasVisitor {
             friendsMenu.addItem(actionItem(title: "送小客人回家", action: #selector(returnTapped)))
         }
+        if !friends.isEmpty {
+            friendsMenu.addItem(.separator())
+            let removeRootItem = NSMenuItem(title: "删除好友", action: nil, keyEquivalent: "")
+            let removeMenu = NSMenu()
+            for friend in friends {
+                let item = actionItem(title: friend.display_name, action: #selector(removeFriendTapped(_:)))
+                item.representedObject = friend.user_id
+                removeMenu.addItem(item)
+            }
+            removeRootItem.submenu = removeMenu
+            friendsMenu.addItem(removeRootItem)
+        }
         friendsItem.submenu = friendsMenu
         menu.addItem(friendsItem)
         menu.addItem(.separator())
@@ -1948,6 +1974,7 @@ final class ControlPanel: NSObject {
     @objc private func inviteFriendPetTapped(_ sender: NSMenuItem) { onInviteFriendPet?(sender.representedObject as? String ?? "") }
     @objc private func doNotDisturbTapped(_ sender: NSMenuItem) { onDoNotDisturb?(sender.representedObject as? Int ?? 30) }
     @objc private func checkUpdateTapped() { onCheckUpdate?() }
+    @objc private func removeFriendTapped(_ sender: NSMenuItem) { onRemoveFriend?(sender.representedObject as? String ?? "") }
     @objc private func openUpdateTapped() { onOpenUpdate?() }
     @objc private func openAISettingsTapped() { onOpenAISettings?() }
     @objc private func quitTapped() { onQuit?() ?? NSApp.terminate(nil) }
@@ -2322,6 +2349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onInviteFriendPet = { [weak self] friend in self?.inviteFriendPet(to: friend) }
         panel.onDoNotDisturb = { [weak self] minutes in self?.enableDoNotDisturb(minutes: minutes) }
         panel.onCheckUpdate = { [weak self] in self?.checkForRuntimeUpdate(silent: false) }
+        panel.onRemoveFriend = { [weak self] friendUserId in self?.confirmAndRemoveFriend(friendUserId) }
         panel.onOpenUpdate = { [weak self] in self?.openRuntimeReleasePage() }
         panel.onOpenAISettings = { [weak self] in self?.openAISettings() }
         panel.onQuit = { [weak self] in self?.quitFromMenu() }
@@ -2755,6 +2783,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         acceptInvite(token: input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    private func confirmAndRemoveFriend(_ friendUserId: String) {
+        guard !friendUserId.isEmpty else { return }
+        let friend = friends.first(where: { $0.user_id == friendUserId })
+        let displayName = friend?.display_name ?? friendUserId
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "删除好友 \(displayName)？"
+        alert.informativeText = "删除后将无法互相串门、邀请或留言。可以重新发邀请加回来。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        removeFriend(friendUserId: friendUserId, displayName: displayName)
+    }
+
+    private func removeFriend(friendUserId: String, displayName: String) {
+        let body = RemoveFriendRequest(user_id: userId, friend_user_id: friendUserId)
+        relay.post("api/friends/remove", body: body) { [weak self] (result: Result<RemoveFriendResponse, Error>) in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let response):
+                    self?.friends = response.friends
+                    self?.panel.configure(title: self?.panel.title ?? "Pet Y Runtime", friends: response.friends)
+                    self?.sayLocal("\(displayName) 不在好友里了。")
+                    self?.log("已删除好友：\(displayName)")
+                case .failure(let error):
+                    self?.sayLocal("删除好友失败。")
+                    self?.log("删除好友失败：\(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     private func acceptInvite(token: String) {
         guard !token.isEmpty else {
             sayLocal("邀请口令是空的。")
@@ -2994,6 +3055,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 panel.setStatus("\(friend.display_name) 加好了")
                 sayLocal("\(friend.display_name) 来啦，我们已经是好友了。")
                 log("新好友已添加：\(friend.display_name)")
+            }
+        case "friend_removed":
+            if let payload = try? decoder.decode(FriendRemovedPayload.self, from: data) {
+                let removed = friends.first(where: { $0.user_id == payload.friend_user_id })
+                friends.removeAll { $0.user_id == payload.friend_user_id }
+                panel.configure(title: panel.title, friends: friends)
+                if let removed {
+                    log("好友 \(removed.display_name) 已和你解除关系。")
+                }
             }
         case "interaction_event":
             if let interaction = try? decoder.decode(InteractionEvent.self, from: data),

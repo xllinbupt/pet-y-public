@@ -317,6 +317,11 @@ function addFriendship(a, b) {
   friendships.add(friendshipKey(b, a));
 }
 
+function removeFriendship(a, b) {
+  friendships.delete(friendshipKey(a, b));
+  friendships.delete(friendshipKey(b, a));
+}
+
 function friendSummaryFor(userId, friendId) {
   return friendSummaries(userId).find((friend) => friend.user_id === friendId) || null;
 }
@@ -703,6 +708,18 @@ async function handleApi(req, res, url) {
     invites.set(token, invite);
     saveRelayState();
     return sendJson(res, 200, { invite });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/friends/remove") {
+    const body = await readBody(req);
+    const { user_id, friend_user_id } = body;
+    if (!user_id || !friend_user_id) return sendJson(res, 400, { error: "user_id and friend_user_id are required" });
+    if (!users.has(user_id)) return sendJson(res, 404, { error: "Unknown user" });
+    removeFriendship(user_id, friend_user_id);
+    saveRelayState();
+    recordAnalytics("friend_removed", { user_id, friend_user_id });
+    emitTo(friend_user_id, "friend_removed", { friend_user_id: user_id });
+    return sendJson(res, 200, { friends: friendSummaries(user_id) });
   }
 
   if (req.method === "POST" && url.pathname === "/api/friends/accept") {
