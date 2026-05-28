@@ -192,6 +192,37 @@ skill-presets/styles/<style>/examples/<example-name>/
 
 The example should preserve appearance prompts, animation state specs, notes, and the pet-life shape.
 
+## Updating / Restarting
+
+When the user asks to update Pet Y, restart the pet, or pull the latest release:
+
+1. Locate the user's Pet Y project directory. Common locations: `~/Documents/pet Y`, `~/pet-y`, `~/pet-y-public`. If you cannot find it, ask the user once for the path and remember it.
+2. From that directory, pull the latest code:
+   ```bash
+   git pull
+   ```
+3. Re-install this Skill so the Agent picks up new instructions:
+   ```bash
+   ./scripts/install-pet-y-skill.sh
+   ```
+4. Re-install the native Runtime (signed `.app` is downloaded if available, otherwise built locally):
+   ```bash
+   ./scripts/install-runtime.sh
+   ```
+5. Stop the currently running pet, then relaunch with the user's existing Life Pack:
+   ```bash
+   pkill -f PetYDesktop || true
+   PET_Y_RELAY=http://47.99.98.43:8787 \
+   PET_Y_LIFE_PACK=life-packs/<the user's pet>/pet-life.json \
+   ./scripts/run-desktop.sh
+   ```
+   To find the user's current Life Pack, check what was passed to the most recent `./scripts/run-desktop.sh`, or inspect `~/Library/Application Support/PetY/LifePacks/` for the most recently modified pet directory.
+6. Confirm the pet is back on the desktop. If not, check `/tmp/pety.log` for errors and report.
+
+Do not ask the user to do these steps by hand. Run them yourself and report what changed in this version (cite the GitHub Release notes for the latest tag if useful: `gh release view <tag> --repo xllinbupt/pet-y-public`).
+
+If the user just wants to restart the pet (no version change), skip steps 2-4 and only do step 5.
+
 ## Editing Existing Pets
 
 When the user asks to change a pet:
