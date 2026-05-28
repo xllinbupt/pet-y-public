@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import Security
 
-let PetYRuntimeVersion = "v0.1.36"
+let PetYRuntimeVersion = "v0.1.37"
 
 
 struct PetYChatConfig: Codable {
@@ -1871,19 +1871,17 @@ final class ControlPanel: NSObject {
         friendsMenu.addItem(actionItem(title: "邀请好友一起玩", action: #selector(shareInviteTapped)))
         friendsMenu.addItem(actionItem(title: "输入好友邀请口令", action: #selector(acceptInviteTapped)))
         friendsMenu.addItem(.separator())
+        let onlineFriends = friends.filter { $0.online }
         if friends.isEmpty {
             let item = NSMenuItem(title: "暂无好友", action: nil, keyEquivalent: "")
             item.isEnabled = false
             friendsMenu.addItem(item)
+        } else if onlineFriends.isEmpty {
+            let item = NSMenuItem(title: "好友都不在家", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            friendsMenu.addItem(item)
         } else {
-            for friend in friends {
-                guard friend.online else {
-                    let item = NSMenuItem(title: "\(friend.display_name) 不在家", action: nil, keyEquivalent: "")
-                    item.isEnabled = false
-                    friendsMenu.addItem(item)
-                    continue
-                }
-
+            for friend in onlineFriends {
                 let item = actionItem(title: "\(friend.display_name) 串门", action: #selector(sendTapped(_:)))
                 item.representedObject = friend.user_id
                 friendsMenu.addItem(item)
@@ -2011,6 +2009,24 @@ final class PetChatTextField: PasteFriendlyTextField {
 }
 
 final class SingleLineSecureTextField: NSSecureTextField {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configureSingleLine()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configureSingleLine()
+    }
+
+    private func configureSingleLine() {
+        cell?.usesSingleLineMode = true
+        cell?.wraps = false
+        cell?.isScrollable = true
+        cell?.lineBreakMode = .byClipping
+        maximumNumberOfLines = 1
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown,
               event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
@@ -4071,14 +4087,10 @@ JSON 格式：
         guard let localWindow else { return }
         closeInteractionMenu()
         var actions: [PetAction] = []
-        for friend in friends {
-            if friend.online {
-                actions.append(PetAction(title: friend.display_name) { [weak self] in
-                    self?.showFriendActionPicker(friend)
-                })
-            } else {
-                actions.append(PetAction(title: friend.display_name, isEnabled: false) {})
-            }
+        for friend in friends where friend.online {
+            actions.append(PetAction(title: friend.display_name) { [weak self] in
+                self?.showFriendActionPicker(friend)
+            })
         }
         actions.append(PetAction(title: "发邀请") { [weak self] in
             self?.closeInteractionMenu()
@@ -4094,11 +4106,17 @@ JSON 格式：
                 self?.returnVisitor()
             })
         }
-        if outgoingVisit != nil {
+        if outgoingVisit != nil && awaySignWindow != nil {
             actions.append(PetAction(title: "喊回来") { [weak self] in
                 self?.closeInteractionMenu()
                 self?.recallLocalPet()
             })
+        } else if outgoingVisit != nil {
+            // Stale outgoing visit state — pet is visibly home. Clear silently.
+            log("发现宠物已在家但 outgoingVisit 没清，自动清理。")
+            outgoingVisit = nil
+            outgoingVisitTargetName = nil
+            panel.setHasAwayPet(false)
         }
         if friends.isEmpty {
             sayLocal("还没有好友，可以先邀请朋友。")
