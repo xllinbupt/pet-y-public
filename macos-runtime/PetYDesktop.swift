@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import Security
 
-let PetYRuntimeVersion = "v0.1.37"
+let PetYRuntimeVersion = "v0.1.38"
 
 
 struct PetYChatConfig: Codable {
@@ -3558,11 +3558,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         chatInputWindow = chatWindow
+        freezeLocalPetForChat()
         installChatDismissMonitors()
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    private func freezeLocalPetForChat() {
+        localRoamTimer?.invalidate()
+        localRoamTimer = nil
+        localAnimationTimer?.invalidate()
+        localAnimationTimer = nil
+        playLocal(.rest, returnToIdleAfter: nil)
+    }
+
     private func closeChatInputWindow() {
+        let wasOpen = chatInputWindow != nil
         chatInputWindow?.close()
         chatInputWindow = nil
         if let monitor = chatDismissLocalMonitor {
@@ -3572,6 +3582,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let monitor = chatDismissGlobalMonitor {
             NSEvent.removeMonitor(monitor)
             chatDismissGlobalMonitor = nil
+        }
+        if wasOpen, !chatRequestInFlight {
+            scheduleLocalRoam()
         }
     }
 
@@ -4792,9 +4805,14 @@ JSON 格式：
         }
     }
 
+    private var isLocalChatActive: Bool {
+        chatInputWindow != nil || chatRequestInFlight
+    }
+
     private func scheduleLocalRoam() {
         localRoamTimer?.invalidate()
         guard localWindow != nil, awaySignWindow == nil else { return }
+        guard !isLocalChatActive else { return }
         let delay = TimeInterval.random(in: 16...32)
         localRoamTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             self?.performLocalRoam()
@@ -4802,7 +4820,7 @@ JSON 格式：
     }
 
     private func performLocalRoam() {
-        guard localWindow != nil, awaySignWindow == nil, ballWindow == nil else {
+        guard localWindow != nil, awaySignWindow == nil, ballWindow == nil, !isLocalChatActive else {
             scheduleLocalRoam()
             return
         }
