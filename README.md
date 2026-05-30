@@ -58,11 +58,13 @@ Run a generated Pet Life Pack:
 PET_Y_LIFE_PACK=life-packs/<your-pet>/pet-life.json ./scripts/run-desktop.sh
 ```
 
-To connect to a shared Relay:
+To connect to the **default shared Relay** (use this unless you are self-hosting):
 
 ```bash
-PET_Y_RELAY=<relay-url> PET_Y_LIFE_PACK=life-packs/<your-pet>/pet-life.json ./scripts/run-desktop.sh
+PET_Y_RELAY=http://47.99.98.43:8787 PET_Y_LIFE_PACK=life-packs/<your-pet>/pet-life.json ./scripts/run-desktop.sh
 ```
+
+> **Default Relay:** `http://47.99.98.43:8787` — the public shared Relay used by Pet Y invites. If you received an invite card or message from a friend, this is the Relay you should connect to.
 
 Pet Y creates a stable local identity automatically and stages Runtime files under:
 
