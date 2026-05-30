@@ -175,6 +175,12 @@ h1 {
   letter-spacing: 0;
 }
 
+.hero h1 {
+  max-width: none;
+  white-space: nowrap;
+  font-size: min(64px, 8.4vw);
+}
+
 .hero-copy {
   max-width: 640px;
   margin-bottom: 28px;
